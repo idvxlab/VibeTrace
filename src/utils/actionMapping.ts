@@ -55,8 +55,10 @@ function mapToolToActionType(tool: string): ActionType | null {
 
 function durationForReasoning(part: { time?: { start?: number; end?: number }; text?: string }): number {
   const { start, end } = part.time ?? {}
-  if (typeof start === 'number' && typeof end === 'number' && end > start) {
-    return Math.max(10, end - start)
+  if (typeof start === 'number' && typeof end === 'number' && end >= start) {
+    if (end > start) return Math.max(10, end - start)
+    /** 常见：流式里 start/end 未区分，同为瞬时点；不应回退到 token*40（会把 Think 拉成 30s 假时长） */
+    return 10
   }
   return Math.min(30_000, Math.max(0, estimateTokensFromStrings(part.text) * 40))
 }

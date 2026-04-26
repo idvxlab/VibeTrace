@@ -53,16 +53,28 @@ const TOP_PAD = 4
 const MIN_W = 28
 /** Duration mode: 小于等于该时长统一用最小宽度（单位 ms） */
 const DUR_WIDTH_BASE_MS = 10
-/** Duration mode: √-scale 参考时长（2分钟）——超过此值仍可继续延伸，但增速减缓 */
-const DUR_SQRT_REF_MS = 120_000
-/** Duration mode: 在参考时长处的 block 宽度（仅锚点，无上限封顶） */
-const DUR_BLOCK_REF_W_PX = 160
-/** Duration mode: 间隔 gap scale 的参考时长（1分钟） */
-const DUR_GAP_REF_MS = 60_000
-/** Duration mode: block 间最小视觉间距 */
-const DUR_GAP_MIN_PX = 8
-/** Duration mode: 在参考间隔时长处的 gap 像素（仅锚点，无上限封顶） */
-const DUR_GAP_REF_PX = 80
+/** Duration mode: 与 `DUR_BLOCK_AT_REF_PX` 成对的参考 wall-clock 时长 */
+const DUR_REF_MS = 120_000
+/** Duration mode: `DUR_REF_MS` 处 block 的右边界（`<=DUR_WIDTH_BASE_MS` 仍用 `MIN_W`） */
+const DUR_BLOCK_AT_REF_PX = 200
+const DUR_BETA_MS = Math.max(1, DUR_REF_MS - DUR_WIDTH_BASE_MS)
+/**
+ * Block 宽（action rect）：`w = MIN_W + DUR_PX_PER_MS * (durationMs - 10)`，故 10ms 以下 28px、120s 时 200px，之后线性延伸。
+ * 与「两 slot 间空档」比例独立，见 `DUR_GAP_MIN_PX` / `DUR_GAP_REF_PX`。
+ */
+const DUR_PX_PER_MS = (DUR_BLOCK_AT_REF_PX - MIN_W) / DUR_BETA_MS
+/**
+ * 空档（idle）水平像素：最小 `DUR_GAP_MIN_PX`，在 `DUR_GAP_REF_MS` 时总宽 `DUR_GAP_REF_PX`（与 10ms 基线同斜率公式的“间隔版”）：
+ * `gapPx = DUR_GAP_MIN_PX + DUR_GAP_PX_PER_MS * max(0, gapMs - 10)`.
+ * 改比例：动 `DUR_GAP_MIN_PX` / `DUR_GAP_REF_PX` / `DUR_GAP_REF_MS`（及可选 `DUR_WIDTH_BASE_MS` 共用于 block+gap 时间基线）。
+ */
+const DUR_GAP_MIN_PX = 10
+const DUR_GAP_REF_PX = 200
+/** 与 `DUR_GAP_MIN_PX` / `DUR_GAP_REF_PX` 成对；可与 `DUR_REF_MS`（block）不同，独立改“间隔的参考时间”时改此值 */
+const DUR_GAP_REF_MS = DUR_REF_MS
+const DUR_GAP_BETA_MS = Math.max(1, DUR_GAP_REF_MS - DUR_WIDTH_BASE_MS)
+const DUR_GAP_PX_PER_MS = (DUR_GAP_REF_PX - DUR_GAP_MIN_PX) / DUR_GAP_BETA_MS
+const DUR_TAIL_PAD_PX = 2
 const BOTTOM_PAD = 6
 /** 至少两行泳道 + 两块 action 时的最小画布高度，避免空数据时 SVG 塌成几十像素 */
 const MIN_SVG_CONTENT_HEIGHT = TOP_PAD + 2 * ROW_H + 2 * BLOCK_H + BOTTOM_PAD
@@ -76,14 +88,29 @@ const FORK_GHOST_STROKE = '#B8B8B8'
 const FORK_GHOST_MARKER_FILL = '#B8B8B8'
 
 /**
- * Duration mode — 连续 action 之间的「空档时间」→ 视觉 gap px。
- * domain [0, 1min] → [DUR_GAP_MIN_PX, DUR_GAP_REF_PX]，clamp=false。
- * 连线长度即为此 gap px，自然编码了 idle 时间。
- * 示例：0ms≈8px  5s≈28px  30s≈58px  60s≈80px  120s≈110px。
+ * 与 block 同一条斜率线：`[10ms,120s] → [28px,200px]` 之外继续线性延伸、无上封顶。
+ * `w = 28 + DUR_PX_PER_MS * (duration - 10)` 当 duration > 10。
  */
-const _durGapScale = d3.scaleSqrt()
-  .domain([0, DUR_GAP_REF_MS])
-  .range([DUR_GAP_MIN_PX, DUR_GAP_REF_PX])
+function durationBlockExtraPx(durationMs: number): number {
+  if (!Number.isFinite(durationMs) || durationMs <= DUR_WIDTH_BASE_MS) return 0
+  return DUR_PX_PER_MS * (durationMs - DUR_WIDTH_BASE_MS)
+}
+
+/**
+ * 相邻两 slot 空档 `gapMs = next.minStart - prev.maxEnd`（已 clamp ≥0）→ 布局上 `interSlotGap` 像素，近似等于正交边水平段长度。
+ * 与 block 的 `MIN_W=28` 不同：空档从 `DUR_GAP_MIN_PX=10` 起算，2min 时总宽 200px。
+ */
+function durationGapWidthPx(gapMs: number): number {
+  if (!Number.isFinite(gapMs) || gapMs <= 0) return DUR_GAP_MIN_PX
+  if (gapMs <= DUR_WIDTH_BASE_MS) return DUR_GAP_MIN_PX
+  return DUR_GAP_MIN_PX + DUR_GAP_PX_PER_MS * (gapMs - DUR_WIDTH_BASE_MS)
+}
+
+function durationStartOffsetPx(slotStart: number, actionStart: number): number {
+  if (!Number.isFinite(slotStart) || !Number.isFinite(actionStart)) return 0
+  const deltaMs = Math.max(0, actionStart - slotStart)
+  return durationBlockExtraPx(deltaMs)
+}
 
 function edgeStrokeAndMarker(
   a: MappedAction & { row: number },
@@ -108,10 +135,7 @@ function durationWidthMeta(
   if (!durationMode) return { w: MIN_W, overThreshold: false }
   if (!Number.isFinite(durationMs) || durationMs <= 0) return { w: MIN_W, overThreshold: false }
   if (durationMs <= DUR_WIDTH_BASE_MS) return { w: MIN_W, overThreshold: false }
-  // 先扣除“最小时长基线”，再做 √ 映射：<=10ms 保持最小宽度，>10ms 才开始拉宽
-  const r = Math.max(1, DUR_SQRT_REF_MS - DUR_WIDTH_BASE_MS)
-  const x = Math.max(0, durationMs - DUR_WIDTH_BASE_MS) / r
-  const w = MIN_W + (DUR_BLOCK_REF_W_PX - MIN_W) * Math.sqrt(x)
+  const w = MIN_W + durationBlockExtraPx(durationMs)
   return { w, overThreshold: false }
 }
 
@@ -415,7 +439,7 @@ function computeLayout(
   for (const idx of rootIndices) {
     const a = sorted[idx]!
     let slotKey: string
-      if (durationMode || !a.parallelGroupId) {
+    if (!a.parallelGroupId) {
       slotKey = `root:${nextRootSlot++}`
     } else {
       const session = actionSessionKey(a)
@@ -465,13 +489,14 @@ function computeLayout(
       continue
     }
     const childSlotByIndex = new Map<number, string>()
+    const childSlotOffsetByIndex = new Map<number, number>()
     const childGroupStepToSlot = new Map<string, Map<number, string>>()
     const childGroupLaneStepCounter = new Map<string, Map<number, number>>()
     let nextChildSlot = 0
     for (const idx of childIndices) {
       const a = sorted[idx]!
       let slotKey: string
-      if (durationMode || !a.parallelGroupId) {
+      if (!a.parallelGroupId) {
         slotKey = `child:${nextChildSlot++}`
       } else {
         const groupKey = a.parallelGroupId
@@ -511,6 +536,18 @@ function computeLayout(
         })
       }
     }
+    if (durationMode) {
+      childSlotWidth.clear()
+      for (const idx of childIndices) {
+        const slotKey = childSlotByIndex.get(idx)
+        if (!slotKey) continue
+        const a = sorted[idx]!
+        const range = childSlotTimeRange.get(slotKey)
+        const dx = durationStartOffsetPx(range?.minStart ?? a.sortTime, a.sortTime)
+        childSlotOffsetByIndex.set(idx, dx)
+        childSlotWidth.set(slotKey, Math.max(childSlotWidth.get(slotKey) ?? 0, dx + blockWidth(durationMode, a.durationMs)))
+      }
+    }
     const childSlotStartX = new Map<string, number>()
     let childCursor = 0
     for (let s = 0; s < nextChildSlot; s++) {
@@ -523,22 +560,26 @@ function computeLayout(
         const nextRange = childSlotTimeRange.get(nextKey)
         if (thisRange && nextRange) {
           const gapMs = Math.max(0, nextRange.minStart - thisRange.maxEnd)
-          interSlotGap = _durGapScale(gapMs)
+          interSlotGap = durationGapWidthPx(gapMs)
         }
       }
       childCursor += (childSlotWidth.get(slotKey) ?? MIN_W) + interSlotGap
     }
     for (const idx of childIndices) {
       const slotKey = childSlotByIndex.get(idx)
-      childLocalXByIndex.set(idx, slotKey ? (childSlotStartX.get(slotKey) ?? 0) : 0)
+      childLocalXByIndex.set(
+        idx,
+        (slotKey ? (childSlotStartX.get(slotKey) ?? 0) : 0) + (childSlotOffsetByIndex.get(idx) ?? 0),
+      )
     }
-    const lastChildGap = durationMode ? DUR_GAP_MIN_PX : TIMELINE_STEP_GAP
+    const lastChildGap = durationMode ? DUR_TAIL_PAD_PX : TIMELINE_STEP_GAP
     const childSpanRight = Math.max(0, childCursor - lastChildGap)
     childSpanByCallID.set(callID, childSpanRight)
   }
 
   /** 根轴每个 slot 的有效跨度：max(父块宽, 父task->子session全程宽) */
   const rootSlotEffectiveSpan = new Map<string, number>()
+  const rootSlotOffsetByIndex = new Map<number, number>()
   /** Duration mode: 记录每个 root slot 的时间区间，用于计算相邻 slot 间的 idle gap */
   const rootSlotTimeRange = new Map<string, { minStart: number; maxEnd: number }>()
   for (const [slotKey, indices] of rootSlotIndices.entries()) {
@@ -558,10 +599,24 @@ function computeLayout(
         maxEnd = Math.max(maxEnd, a.sortTime + Math.max(0, a.durationMs))
       }
     }
-    rootSlotEffectiveSpan.set(slotKey, span)
     if (durationMode && Number.isFinite(minStart)) {
       rootSlotTimeRange.set(slotKey, { minStart, maxEnd })
     }
+    if (durationMode && Number.isFinite(minStart)) {
+      span = MIN_W
+      for (const idx of indices) {
+        const a = sorted[idx]!
+        const dx = durationStartOffsetPx(minStart, a.sortTime)
+        rootSlotOffsetByIndex.set(idx, dx)
+        const w = blockWidth(durationMode, a.durationMs)
+        span = Math.max(span, dx + w)
+        if (a.actionType === 'Subagent' && a.source !== 'child-session' && a.callID) {
+          const childSpan = childSpanByCallID.get(a.callID) ?? 0
+          span = Math.max(span, dx + w + TIMELINE_STEP_GAP + childSpan)
+        }
+      }
+    }
+    rootSlotEffectiveSpan.set(slotKey, span)
   }
 
   const rootSlotStartX = new Map<string, number>()
@@ -576,7 +631,7 @@ function computeLayout(
       const nextRange = rootSlotTimeRange.get(nextKey)
       if (thisRange && nextRange) {
         const gapMs = Math.max(0, nextRange.minStart - thisRange.maxEnd)
-        interSlotGap = _durGapScale(gapMs)
+        interSlotGap = durationGapWidthPx(gapMs)
       }
     }
     rootCursor += (rootSlotEffectiveSpan.get(slotKey) ?? MIN_W) + interSlotGap
@@ -584,7 +639,10 @@ function computeLayout(
   for (const idx of rootIndices) {
     const slotKey = rootSlotByIndex.get(idx)
     if (!slotKey) continue
-    actionXBySortedIndex.set(idx, rootSlotStartX.get(slotKey) ?? MARGIN_LEFT)
+    actionXBySortedIndex.set(
+      idx,
+      (rootSlotStartX.get(slotKey) ?? MARGIN_LEFT) + (rootSlotOffsetByIndex.get(idx) ?? 0),
+    )
   }
 
   /**
@@ -653,6 +711,7 @@ function computeLayout(
       .map((x) => x.idx)
 
     const branchSlotByIndex = new Map<number, string>()
+    const branchSlotOffsetByIndex = new Map<number, number>()
     const branchSlotIndices = new Map<string, number[]>()
     const branchGroupStepToSlot = new Map<string, Map<number, string>>()
     const branchGroupLaneStepCounter = new Map<string, Map<number, number>>()
@@ -660,7 +719,7 @@ function computeLayout(
     for (const idx of branchIndices) {
       const a = sorted[idx]!
       let slotKey: string
-      if (durationMode || !a.parallelGroupId) {
+      if (!a.parallelGroupId) {
         slotKey = `branch:${nextBranchSlot++}`
       } else {
         const groupKey = a.parallelGroupId
@@ -711,6 +770,21 @@ function computeLayout(
       if (durationMode && Number.isFinite(minStart)) {
         branchSlotTimeRange.set(slotKey, { minStart, maxEnd })
       }
+      if (durationMode && Number.isFinite(minStart)) {
+        span = MIN_W
+        for (const idx of indices) {
+          const a = sorted[idx]!
+          const dx = durationStartOffsetPx(minStart, a.sortTime)
+          branchSlotOffsetByIndex.set(idx, dx)
+          const w = blockWidth(durationMode, a.durationMs)
+          span = Math.max(span, dx + w)
+          if (a.actionType === 'Subagent' && a.source !== 'child-session' && a.callID) {
+            const childSpan = childSpanByCallID.get(a.callID) ?? 0
+            span = Math.max(span, dx + w + TIMELINE_STEP_GAP + childSpan)
+          }
+        }
+        branchSlotEffectiveSpan.set(slotKey, span)
+      }
     }
     const branchSlotStartX = new Map<string, number>()
     let branchCursor = 0
@@ -724,7 +798,7 @@ function computeLayout(
         const nextRange = branchSlotTimeRange.get(nextKey)
         if (thisRange && nextRange) {
           const gapMs = Math.max(0, nextRange.minStart - thisRange.maxEnd)
-          interSlotGap = _durGapScale(gapMs)
+          interSlotGap = durationGapWidthPx(gapMs)
         }
       }
       branchCursor += (branchSlotEffectiveSpan.get(slotKey) ?? MIN_W) + interSlotGap
@@ -732,9 +806,9 @@ function computeLayout(
     for (const idx of branchIndices) {
       const slotKey = branchSlotByIndex.get(idx)
       const localX = slotKey ? (branchSlotStartX.get(slotKey) ?? 0) : 0
-      actionXBySortedIndex.set(idx, forkBaseX + localX)
+      actionXBySortedIndex.set(idx, forkBaseX + localX + (branchSlotOffsetByIndex.get(idx) ?? 0))
     }
-    const lastBranchGap = durationMode ? DUR_GAP_MIN_PX : TIMELINE_STEP_GAP
+    const lastBranchGap = durationMode ? DUR_TAIL_PAD_PX : TIMELINE_STEP_GAP
     forkBranchRight = forkBaseX + Math.max(0, branchCursor - lastBranchGap)
 
     /**
@@ -779,14 +853,14 @@ function computeLayout(
           const slotKey = ghostRootSlots[k]!.slotKey
           const indices = rootSlotIndices.get(slotKey) ?? []
           for (const idx of indices) {
-            actionXBySortedIndex.set(idx, stepX)
+            actionXBySortedIndex.set(idx, stepX + (rootSlotOffsetByIndex.get(idx) ?? 0))
           }
         }
         if (k < nextBranchSlot) {
           const slotKey = `branch:${k}`
           const indices = branchSlotIndices.get(slotKey) ?? []
           for (const idx of indices) {
-            actionXBySortedIndex.set(idx, stepX)
+            actionXBySortedIndex.set(idx, stepX + (branchSlotOffsetByIndex.get(idx) ?? 0))
           }
         }
         unifiedCursor += span + TIMELINE_STEP_GAP
@@ -2200,6 +2274,7 @@ export default function ActionFlowVisualization({
       )
       content
         .append('path')
+        .attr('class', 'afv-edge')
         .attr('d', branchPath.toString())
         .attr('fill', 'none')
         .attr('stroke', branchStroke)
@@ -2286,6 +2361,9 @@ export default function ActionFlowVisualization({
         }
       }
     }
+
+    /** 边线先画、rect 后画时 rect 会压住 path；全部画完后把连线抬到最上层，避免「action 盖住线」 */
+    content.selectAll<SVGPathElement, unknown>('path.afv-edge').raise()
 
     const desiredH = totalH + topOffset
     // 关键：使用像素级固定画布，不用 viewBox 缩放，避免不同行数时 action 尺寸变化

@@ -12,12 +12,10 @@ dist
 dist-ssr
 *.local
 docs/
-.env
+# 嵌套的 OpenCode 源码仓（其内部有 .git，勿作为子目录整仓提交）
+.opencode-src/
 .env.local
 .env.*.local
-.env.development.local
-.env.test.local
-.env.production.local
 
 # Editor directories and files
 .vscode/*
