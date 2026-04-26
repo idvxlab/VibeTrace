@@ -44,19 +44,7 @@ VITE_OPENCODE_BASE=http://127.0.0.1:这里换成你终端显示的端口
 ```bash
 opencode serve --port 4096
 ```
-
-### 3. 安装并启动本前端
-
-```bash
-npm install
-npm run dev
-```
-
-默认开发服务器：**<http://localhost:5173>**（见 `vite.config.ts`）。
-
-在浏览器打开上述地址即可使用；并确保 `opencode serve` 的终端窗口保持运行。
-
-### 4. 环境变量说明（`.env.local`）
+### 3. 环境变量说明（`.env.local`）
 
 建议先复制模板：
 
@@ -73,6 +61,18 @@ cp .env.example .env.local
 
 
 ---
+
+### 4. 安装并启动本前端
+
+```bash
+npm install
+npm run dev
+```
+
+默认开发服务器：**<http://localhost:5173>**（见 `vite.config.ts`）。
+
+在浏览器打开上述地址即可使用；并确保 `opencode serve` 的终端窗口保持运行。
+
 
 ## 二、项目结构说明
 
