@@ -165,12 +165,16 @@ export default function SubtaskCard({
     [subtask, messages, displayIndex, nowTick, childBranchMessages],
   )
 
-  /** 本子任务段内的 assistant 消息（顺序与全局 timeline 一致） */
+  /** 本子任务段内的 user 起点 + assistant 消息（顺序与全局 timeline 一致） */
   const segmentMessages = useMemo((): OcMessage[] => {
-    return subtask.assistantMessageIndices
+    const indices = [
+      ...(subtask.userMessageIndices ?? []),
+      ...subtask.assistantMessageIndices,
+    ].sort((a, b) => a - b)
+    return indices
       .map(i => messages[i])
       .filter((msg): msg is OcMessage => msg != null)
-  }, [subtask.assistantMessageIndices, messages])
+  }, [subtask.userMessageIndices, subtask.assistantMessageIndices, messages])
 
   const parentFlowActions = useMemo(
     () => buildMappedActionsFromMessages(segmentMessages, { nowMs: nowTick }),

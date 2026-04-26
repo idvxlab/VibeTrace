@@ -8,6 +8,7 @@ import type {
   ToolPart,
 } from '../types/opencode'
 import { isTodoWriteTool } from './subtaskGrouping'
+import { stripHarnessGuidanceForDisplay } from '../config/harnessGuidance'
 
 const SUBAGENT_TOOLS = new Set(['task', 'subtask', 'subagent', 'agent'])
 
@@ -179,6 +180,16 @@ function durationForText(text: string): number {
   return Math.min(120_000, 50 + text.length * 15)
 }
 
+function userMessageDisplayText(message: OcMessage): string {
+  const partText = message.parts
+    .filter((part): part is Extract<OcMessagePart, { type: 'text' }> => part.type === 'text')
+    .map((part) => part.text)
+    .filter(Boolean)
+    .join('\n\n')
+  const raw = partText || message.info.content || ''
+  return stripHarnessGuidanceForDisplay(raw).trim()
+}
+
 export function isSubagentToolName(tool: string): boolean {
   const t = normalizeToolName(tool)
   return SUBAGENT_TOOLS.has(t)
@@ -196,6 +207,7 @@ export const ROWS_PER_PROCESS = 2
 
 function localLayerForActionType(actionType: ActionType): 0 | 1 {
   if (
+    actionType === 'UserRequest' ||
     actionType === 'Think' ||
     actionType === 'Response' ||
     actionType === 'Compaction' ||
@@ -298,9 +310,31 @@ export function buildMappedActionsFromMessages(
   const staleToolCallIDs = collectStaleToolCallIDs(messages)
 
   messages.forEach((message, messageIndex) => {
-    if (message.info.role !== 'assistant') return
     const baseTime = message.info.time?.created ?? 0
     const mid = message.info.id
+
+    if (message.info.role === 'user') {
+      const text = userMessageDisplayText(message)
+      const firstTextPart = message.parts.find((part) => part.type === 'text')
+      out.push({
+        actionType: 'UserRequest',
+        status: 'completed',
+        durationMs: Math.max(10, durationForText(text)),
+        tokenEstimate: estimateTokensFromStrings(text),
+        sortTime: baseTime,
+        source: 'part',
+        sessionID: message.info.sessionID,
+        messageID: mid,
+        partIndex: firstTextPart ? message.parts.indexOf(firstTextPart) : 0,
+        messageIndex,
+        partId: firstTextPart?.id,
+        detail: text || '(empty)',
+        row: actionRowForBand(processBand, 'UserRequest'),
+      })
+      return
+    }
+
+    if (message.info.role !== 'assistant') return
 
     message.parts.forEach((part, partIndex) => {
       const sortTime = baseTime + partIndex * 0.001

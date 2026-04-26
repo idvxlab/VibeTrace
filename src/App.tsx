@@ -653,7 +653,11 @@ function App() {
   useEffect(() => {
     if (messages.length === 0) return
     const payload = assistantSubtasks.map((st, si) => {
-      const segmentMsgs = st.assistantMessageIndices
+      const segmentIndices = [
+        ...(st.userMessageIndices ?? []),
+        ...st.assistantMessageIndices,
+      ].sort((a, b) => a - b)
+      const segmentMsgs = segmentIndices
         .map(i => messages[i])
         .filter((m): m is OcMessage => m != null)
       return {
@@ -663,8 +667,9 @@ function App() {
         todos: st.todos,
         todosNewlyCompleted: st.todosNewlyCompleted,
         linkedTodoIds: st.linkedTodoIds,
+        userMessageIndices: st.userMessageIndices,
         assistantMessageIndices: st.assistantMessageIndices,
-        messages: st.assistantMessageIndices.map(i => formatMessageForConsole(messages[i], i)),
+        messages: segmentIndices.map(i => formatMessageForConsole(messages[i], i)),
         flowActions: buildMappedActionsFromMessages(segmentMsgs),
       }
     })

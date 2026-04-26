@@ -176,9 +176,10 @@ export type OcMessagePart =
   | ImagePart
   | CompactionPart
 
-// ===== 可视化：12 类 Agent Action =====
+// ===== 可视化：Agent Action =====
 
 export type ActionType =
+  | 'UserRequest'
   | 'Think'
   | 'Clarify'
   | 'Plan'

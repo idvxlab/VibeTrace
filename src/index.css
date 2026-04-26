@@ -195,6 +195,7 @@ body {
 
 /* Action 流 react-tooltip：浅色底、随内容增高（不强制滚动） */
 .action-flow-react-tooltip {
+  z-index: 10050 !important;
   min-width: 260px;
   width: max-content;
   max-width: min(480px, 94vw) !important;

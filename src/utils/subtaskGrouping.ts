@@ -183,12 +183,15 @@ export interface AssistantSubtask {
    * 用于点亮 Todo 面板中的**具体条目**；为空则 execution 也退回消息高亮。
    */
   linkedTodoIds: string[]
+  /** 本子任务起点携带的 user message；用于把用户输入画成 UserRequest action。 */
+  userMessageIndices: number[]
   assistantMessageIndices: number[]
 }
 
 /**
  * 同一子任务段在 assistant 消息增多时仍保持同一 id（仅用段首 assistant 的 message id），
- * 避免仅因追加回复就换 key / 被误认为新开子任务。分段仍仅由 todowrite 完成 diff 驱动，与 user 消息无关。
+ * 避免仅因追加回复就换 key / 被误认为新开子任务。user 消息只负责开启新的 range，
+ * range 内仍由 todowrite 完成 diff 驱动。
  */
 function buildSubtaskId(indices: number[], messages: OcMessage[]): string {
   if (indices.length === 0) return 'subtask-empty'
@@ -229,14 +232,34 @@ function resolveSnapshotForSegment(
 }
 
 /**
- * 全部 assistant 消息下标（按时间顺序），**不按 user 切段**。
- * 子任务应按 todo 快照的完成关系连续积累；user 仅表示新一轮对话，不应单独重置 execution 分段。
+ * 按 user message 切出 assistant range：user 结束上一段，并作为下一段的起点 action。
+ * range 内仍沿用原有 todo 快照完成关系做细分。
  */
-function assistantIndicesAll(messages: OcMessage[]): number[] {
-  const out: number[] = []
-  for (let i = 0; i < messages.length; i++) {
-    if (messages[i]!.info.role === 'assistant') out.push(i)
+function assistantRangesSplitByUser(
+  messages: OcMessage[]
+): Array<{ assistantIndices: number[]; userMessageIndices: number[] }> {
+  const out: Array<{ assistantIndices: number[]; userMessageIndices: number[] }> = []
+  let pendingUsers: number[] = []
+  let currentAssistants: number[] = []
+  const flush = () => {
+    if (currentAssistants.length === 0) return
+    out.push({
+      assistantIndices: currentAssistants,
+      userMessageIndices: pendingUsers,
+    })
+    currentAssistants = []
+    pendingUsers = []
   }
+  for (let i = 0; i < messages.length; i++) {
+    const role = messages[i]!.info.role
+    if (role === 'user') {
+      flush()
+      pendingUsers.push(i)
+    } else if (role === 'assistant') {
+      currentAssistants.push(i)
+    }
+  }
+  flush()
   return out
 }
 
@@ -263,10 +286,10 @@ export function groupAssistantSubtasks(
 
   const subtasks: AssistantSubtask[] = []
 
-  const globalRange = assistantIndicesAll(messages)
-  if (globalRange.length === 0) return subtasks
+  const ranges = assistantRangesSplitByUser(messages)
+  if (ranges.length === 0) return subtasks
 
-  for (const range of [globalRange]) {
+  for (const { assistantIndices: range, userMessageIndices } of ranges) {
     const rangeSubtasks: AssistantSubtask[] = []
 
     const push = (
@@ -278,12 +301,14 @@ export function groupAssistantSubtasks(
       if (indices.length === 0) return
       const td = todos.map(shallowCloneTodo)
       const nw = newly.map(shallowCloneTodo)
+      const isFirstSubtaskInRange = rangeSubtasks.length === 0
       rangeSubtasks.push({
         subtask_id: buildSubtaskId(indices, messages),
         phase,
         todos: td,
         todosNewlyCompleted: nw,
         linkedTodoIds: linkedTodoIdsForHighlight(nw),
+        userMessageIndices: isFirstSubtaskInRange ? [...userMessageIndices] : [],
         assistantMessageIndices: indices,
       })
     }
@@ -301,7 +326,7 @@ export function groupAssistantSubtasks(
     }
 
     /**
-     * 子任务切分：完成驱动；仅遍历 assistant 消息下标，user 消息不参与分段。
+     * 子任务切分：完成驱动 + user 边界；这里仅遍历当前 user range 内的 assistant 下标。
      * - 第一次 todowrite 起进入执行段并持续累计；
      * - pending -> in_progress 不切段；
      * - 仅当 todowrite 快照 diff 出现「新完成」时才在该 tw 处收口一段；

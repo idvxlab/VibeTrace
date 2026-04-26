@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useMemo, useRef } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import * as d3 from 'd3'
 import { Tooltip } from 'react-tooltip'
 import type { ActionType, MappedAction, OcMessage } from '../types/opencode'
@@ -11,10 +11,7 @@ import {
   DEFAULT_ACTION_TYPE_PALETTE_ID,
 } from '../styles/actionTypePalettes'
 import { appendActionFlowIcon, getActionFlowIconSvg } from './actionFlowIcons'
-import {
-  buildEnglishTooltipContent,
-  resolvePartForAction,
-} from '../utils/actionTooltipMapping'
+import { buildCompactMappedActionTooltipHtml } from '../utils/actionTooltipMapping'
 import { actionKey } from '../utils/actionKey'
 
 interface Props {
@@ -74,6 +71,10 @@ type TypeBucket = {
   count: number
   /** 保持原始顺序的 actions，用于在区域内按时间序铺格 */
   actions: (MappedAction & { row: number })[]
+}
+
+function actionTypeLabel(type: ActionType): string {
+  return type === 'UserRequest' ? 'user request' : type
 }
 
 function aggregateByType(actions: (MappedAction & { row: number })[]): TypeBucket[] {
@@ -199,36 +200,7 @@ function pickLabelLines(
 
 function buildBucketTooltipHtml(bucket: TypeBucket, totalCount: number): string {
   const pct = Math.round((bucket.count / totalCount) * 100)
-  return `<div class="action-tip-root action-tip-root--compact"><div class="action-tip-compact-main"><div class="action-tip-compact-head"><strong>${escapeHtml(bucket.type)}</strong> <span class="action-tip-compact-status">×${bucket.count} (${pct}%)</span></div></div></div>`
-}
-
-function buildBlockTooltipHtml(
-  act: MappedAction & { row: number },
-  tooltipMessages?: OcMessage[],
-): string {
-  const dur = formatDurationMs(act.durationMs)
-  let main = ''
-  if (tooltipMessages?.length) {
-    const part = resolvePartForAction(tooltipMessages, act)
-    if (part) {
-      const kv = buildEnglishTooltipContent(part, { allMessages: tooltipMessages })
-      const lines = kv.body.flatMap((row) => {
-        if (row.kind === 'kv') return [`${row.key}: ${row.value}`]
-        if (row.kind === 'error') return [row.value]
-        if (row.kind === 'about') return ['About:', ...row.headers]
-        return [row.value]
-      })
-      main = `<div class="action-tip-compact-main"><div class="action-tip-compact-head"><strong>${escapeHtml(kv.primaryLabel)}</strong> <span class="action-tip-compact-status">${escapeHtml(kv.statusLabel)}</span></div>${
-        lines.length
-          ? `<div class="action-tip-compact-lines">${lines
-              .map((l) => `<div class="action-tip-compact-line">${escapeHtml(l)}</div>`)
-              .join('')}</div>`
-          : ''
-      }</div>`
-    }
-  }
-  const foot = `<div class="action-tip-compact-footer">${escapeHtml(dur)}</div>`
-  return `<div class="action-tip-root action-tip-root--compact">${main}${foot}</div>`
+  return `<div class="action-tip-root action-tip-root--compact"><div class="action-tip-compact-main"><div class="action-tip-compact-head"><strong>${escapeHtml(actionTypeLabel(bucket.type))}</strong> <span class="action-tip-compact-status">×${bucket.count} (${pct}%)</span></div></div></div>`
 }
 
 export default function SubtaskActionTypeTreemap({
@@ -247,6 +219,8 @@ export default function SubtaskActionTypeTreemap({
   const svgRef = useRef<SVGSVGElement | null>(null)
   const reactId = useId().replace(/:/g, '')
   const tooltipId = `subtask-tm-tip-${reactId}`
+  const [tooltipMounted, setTooltipMounted] = useState(false)
+  useEffect(() => { setTooltipMounted(true) }, [])
 
   const buckets = useMemo(() => aggregateByType(actions), [actions])
   const totalCount = useMemo(
@@ -439,7 +413,7 @@ export default function SubtaskActionTypeTreemap({
       }) {
         /** 1) 先选 label（多行无省略），再算 icon 区可用高度，必要时减少行数 */
         const labelMaxW = p.w - REGION_INNER_PAD * 2
-        let labelLines = pickLabelLines(p.bucket.type, p.bucket.count, p.pct, labelMaxW)
+        let labelLines = pickLabelLines(actionTypeLabel(p.bucket.type), p.bucket.count, p.pct, labelMaxW)
         const iconMinH = BLOCK_SIZE
         while (labelLines.length > 0) {
           const labelTotalH = labelLines.length * LABEL_LINE_H + LABEL_BAND_PAD
@@ -527,20 +501,36 @@ export default function SubtaskActionTypeTreemap({
             blockG.style('opacity', '0.30')
           }
           /** 极淡底色 + 无外框；选中时加深底色 + 主题色描边 */
-          blockG
-            .append('rect')
-            .attr('x', bx)
-            .attr('y', by)
-            .attr('width', BLOCK_SIZE)
-            .attr('height', BLOCK_SIZE)
-            .attr('rx', BLOCK_RX)
-            .attr('fill', colors.fill)
-            .attr('opacity', isActSelected ? 0.95 : 0.55)
-            .attr('stroke', isActSelected ? CELL_STROKE_SELECTED : 'none')
-            .attr('stroke-width', isActSelected ? 1.5 : 0)
+          const target = (act.actionType === 'UserRequest'
+            ? blockG
+                .append('circle')
+                .attr('cx', bx + BLOCK_SIZE / 2)
+                .attr('cy', by + BLOCK_SIZE / 2)
+                .attr('r', BLOCK_SIZE / 2 - 3)
+                .attr('fill', 'transparent')
+                .attr('stroke', colors.iconFill)
+                .attr('stroke-width', isActSelected ? 2 : 1.6)
+            : blockG
+                .append('rect')
+                .attr('x', bx)
+                .attr('y', by)
+                .attr('width', BLOCK_SIZE)
+                .attr('height', BLOCK_SIZE)
+                .attr('rx', BLOCK_RX)
+                .attr('fill', colors.fill)
+                .attr('opacity', isActSelected ? 0.95 : 0.55)
+                .attr('stroke', isActSelected ? CELL_STROKE_SELECTED : 'none')
+                .attr('stroke-width', isActSelected ? 1.5 : 0)) as unknown as d3.Selection<
+            SVGGraphicsElement,
+            unknown,
+            null,
+            undefined
+          >
+          target
             .style('cursor', onSelectAction ? 'pointer' : 'default')
+            .attr('pointer-events', 'all')
             .attr('data-tooltip-id', tooltipId)
-            .attr('data-tooltip-html', buildBlockTooltipHtml(act, tooltipMessages))
+            .attr('data-tooltip-html', buildCompactMappedActionTooltipHtml(act, tooltipMessages, formatDurationMs))
             .attr('data-tooltip-place', 'top')
             .on('click', (ev: Event) => {
               if (!onSelectAction) return
@@ -548,7 +538,7 @@ export default function SubtaskActionTypeTreemap({
               onSelectAction(isActSelected ? null : akey)
             })
 
-          if (contentNode && colorMode !== 'type') {
+          if (contentNode && colorMode !== 'type' && act.actionType !== 'UserRequest') {
             appendActionFlowIcon(
               contentNode as unknown as SVGGElement,
               getActionFlowIconSvg(act.actionType),
@@ -629,16 +619,32 @@ export default function SubtaskActionTypeTreemap({
           .append('g')
           .attr('class', 'subtask-tm-compact')
           .attr('data-action-key', akey)
-        /** 紧凑档：完全去掉 rect 方框，只画一个透明 hit area；点击 → 该 type 的「代表 action」 */
-        blockG
-          .append('rect')
-          .attr('x', bx)
-          .attr('y', by)
-          .attr('width', BLOCK_SIZE)
-          .attr('height', BLOCK_SIZE)
-          .attr('rx', BLOCK_RX)
-          .attr('fill', 'transparent')
+        /** 紧凑档：普通 action 去掉方框只保留图标；UserRequest 保持空心圆。 */
+        const compactTarget = (p.firstAct.actionType === 'UserRequest'
+          ? blockG
+              .append('circle')
+              .attr('cx', bx + BLOCK_SIZE / 2)
+              .attr('cy', by + BLOCK_SIZE / 2)
+              .attr('r', BLOCK_SIZE / 2 - 3)
+              .attr('fill', 'transparent')
+              .attr('stroke', p.repColors.iconFill)
+              .attr('stroke-width', 1.6)
+          : blockG
+              .append('rect')
+              .attr('x', bx)
+              .attr('y', by)
+              .attr('width', BLOCK_SIZE)
+              .attr('height', BLOCK_SIZE)
+              .attr('rx', BLOCK_RX)
+              .attr('fill', 'transparent')) as unknown as d3.Selection<
+          SVGGraphicsElement,
+          unknown,
+          null,
+          undefined
+        >
+        compactTarget
           .style('cursor', onSelectAction ? 'pointer' : 'default')
+          .attr('pointer-events', 'all')
           .attr('data-tooltip-id', tooltipId)
           .attr('data-tooltip-html', p.compactTooltip)
           .attr('data-tooltip-place', 'top')
@@ -648,7 +654,7 @@ export default function SubtaskActionTypeTreemap({
             onSelectAction(selectedActionKey === akey ? null : akey)
           })
 
-        if (contentNode && colorMode !== 'type') {
+        if (contentNode && colorMode !== 'type' && p.firstAct.actionType !== 'UserRequest') {
           appendActionFlowIcon(
             contentNode as unknown as SVGGElement,
             getActionFlowIconSvg(p.firstAct.actionType),
@@ -684,13 +690,17 @@ export default function SubtaskActionTypeTreemap({
         const cx = p.x0 + p.w / 2
         const cy = p.y0 + p.h / 2
         const r = Math.max(2, Math.min(5, Math.min(p.w, p.h) / 3))
+        const isUserRequest = p.bucket.type === 'UserRequest'
         p.region
           .append('circle')
           .attr('cx', cx)
           .attr('cy', cy)
           .attr('r', r)
-          .attr('fill', p.repColors.iconFill)
+          .attr('fill', isUserRequest ? 'transparent' : p.repColors.iconFill)
+          .attr('stroke', isUserRequest ? p.repColors.iconFill : 'none')
+          .attr('stroke-width', isUserRequest ? 1.4 : 0)
           .style('cursor', 'pointer')
+          .attr('pointer-events', 'all')
           .attr('data-tooltip-id', tooltipId)
           .attr('data-tooltip-html', p.compactTooltip)
           .attr('data-tooltip-place', 'top')
@@ -734,17 +744,21 @@ export default function SubtaskActionTypeTreemap({
       >
         <svg ref={svgRef} style={{ display: 'block' }} />
       </div>
-      <Tooltip
-        id={tooltipId}
-        className="action-flow-react-tooltip"
-        variant="light"
-        delayShow={120}
-        delayHide={180}
-        opacity={1}
-        clickable
-        globalCloseEvents={{ scroll: false, resize: true, escape: true }}
-        arrowColor="#f8fafc"
-      />
+      {tooltipMounted && (
+        <Tooltip
+          id={tooltipId}
+          anchorSelect={`[data-tooltip-id="${tooltipId}"]`}
+          className="action-flow-react-tooltip"
+          variant="light"
+          positionStrategy="fixed"
+          delayShow={120}
+          delayHide={180}
+          opacity={1}
+          clickable
+          globalCloseEvents={{ scroll: false, resize: true, escape: true }}
+          arrowColor="#f8fafc"
+        />
+      )}
     </div>
   )
 }

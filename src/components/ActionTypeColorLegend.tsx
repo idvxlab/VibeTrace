@@ -13,7 +13,7 @@ type Props = {
 }
 
 /**
- * 两行图例：第一行 action_type，第二行颜色方块。
+ * 两行图例：第一行 action_type，第二行色块 / 符号（UserRequest 为空心圆环，无方框底）。
  */
 export default function ActionTypeColorLegend({
   paletteId,
@@ -23,6 +23,7 @@ export default function ActionTypeColorLegend({
     return raw.replace(/<svg\b/, '<svg width="12" height="12"')
   }
   const typeOrder: ActionType[] = [
+    'UserRequest',
     'Think',
     'Plan',
     'Clarify',
@@ -40,7 +41,7 @@ export default function ActionTypeColorLegend({
     const c = getActionTypeTriad(paletteId, type)
     return {
       key: type,
-      label: type,
+      label: type === 'UserRequest' ? 'user request' : type,
       fill: c.fill,
       stroke: c.stroke,
       icon: buildIconMarkup(type),
@@ -105,37 +106,53 @@ export default function ActionTypeColorLegend({
             key={`${item.key}-color`}
             style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}
           >
-            <span
-              title={`${item.label} · ${item.fill}`}
-              style={{
-                width: 18,
-                height: 18,
-                borderRadius: 3,
-                boxSizing: 'border-box',
-                background: item.fill,
-                border: `1.5px solid ${item.stroke}`,
-                flexShrink: 0,
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              {item.icon ? (
-                <span
-                  style={{
-                    width: 12,
-                    height: 12,
-                    lineHeight: 0,
-                    color: item.iconColor,
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    pointerEvents: 'none',
-                  }}
-                  dangerouslySetInnerHTML={{ __html: item.icon }}
-                />
-              ) : null}
-            </span>
+            {item.key === 'UserRequest' ? (
+              <span
+                title={`${item.label} · ${item.stroke}`}
+                style={{
+                  width: 12,
+                  height: 12,
+                  borderRadius: '50%',
+                  boxSizing: 'border-box',
+                  background: 'transparent',
+                  border: `2px solid ${item.stroke}`,
+                  flexShrink: 0,
+                  display: 'inline-block',
+                }}
+              />
+            ) : (
+              <span
+                title={`${item.label} · ${item.fill}`}
+                style={{
+                  width: 18,
+                  height: 18,
+                  borderRadius: 3,
+                  boxSizing: 'border-box',
+                  background: item.fill,
+                  border: `1.5px solid ${item.stroke}`,
+                  flexShrink: 0,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                {item.icon ? (
+                  <span
+                    style={{
+                      width: 12,
+                      height: 12,
+                      lineHeight: 0,
+                      color: item.iconColor,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      pointerEvents: 'none',
+                    }}
+                    dangerouslySetInnerHTML={{ __html: item.icon }}
+                  />
+                ) : null}
+              </span>
+            )}
           </div>
         ))}
       </div>

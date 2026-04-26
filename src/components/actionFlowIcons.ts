@@ -23,6 +23,10 @@ export function prefixSvgIds(svg: string, prefix: string): string {
 }
 
 const RAW: Record<ActionType, string> = {
+  UserRequest: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+<circle cx="8" cy="8" r="5.5" stroke="#2B2B2B" stroke-width="1.5"/>
+</svg>`,
+
   Think: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
 <mask id="path-1-inside-1_268_1481" fill="white">
 <path fill-rule="evenodd" clip-rule="evenodd" d="M7.46667 13.3333L7.46667 2.66667C7.46667 1.19391 6.27276 0 4.8 0C3.32724 0 2.13333 1.19391 2.13333 2.66667C2.13333 2.86402 2.15477 3.05637 2.19545 3.2415C0.94744 3.46402 0 4.5547 0 5.86667C0 6.73899 0.41885 7.51348 1.06641 8C0.41885 8.48652 0 9.26101 0 10.1333C0 11.4453 0.947442 12.536 2.19545 12.7585C2.15477 12.9436 2.13333 13.136 2.13333 13.3333C2.13333 14.8061 3.32724 16 4.8 16C6.27276 16 7.46667 14.8061 7.46667 13.3333Z"/>
@@ -162,6 +166,8 @@ export function appendActionFlowIcon(
 
   const g = document.createElementNS('http://www.w3.org/2000/svg', 'g')
   g.setAttribute('class', 'action-flow-action-icon')
+  /** 不抢命中：否则叠在 action rect 上时悬停落在图标区域，无 data-tooltip 属性 → tooltip 随机「失灵」 */
+  g.setAttribute('pointer-events', 'none')
   g.setAttribute('style', `color: ${iconColor}`)
   g.setAttribute('transform', `translate(${cx}, ${cy})`)
 

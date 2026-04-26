@@ -3,6 +3,7 @@ import type { ActionType } from '../types/opencode'
 
 /** 与 `ActionType` 联合顺序一致，供 D3 scheme 按索引对齐 */
 export const ACTION_TYPE_ORDER: readonly ActionType[] = [
+  'UserRequest',
   'Think',
   'Clarify',
   'Plan',
@@ -42,6 +43,7 @@ export type ActionTypeTriad = { fill: string; stroke: string; accent: string }
 
 /** 高对比手工盘：描边更深，块之间更易区分 */
 const CONTRAST: Record<ActionType, ActionTypeTriad> = {
+  UserRequest: { fill: '#FFFFFF', stroke: '#3D4F63', accent: '#3D4F63' },
   Think: { fill: '#E8E6FF', stroke: '#6350C9', accent: '#342A78' },
   Clarify: { fill: '#FFF0DC', stroke: '#C78339', accent: '#744A1F' },
   Plan: { fill: '#DAF8EF', stroke: '#1C9A7F', accent: '#0E5C4C' },
@@ -58,6 +60,7 @@ const CONTRAST: Record<ActionType, ActionTypeTriad> = {
 
 /** 色谱手工盘：色相拉开，含柔和黄/玫红（与 pending / error 通过低饱和区分） */
 const SPECTRUM: Record<ActionType, ActionTypeTriad> = {
+  UserRequest: { fill: '#FFFFFF', stroke: '#3D4F63', accent: '#3D4F63' },
   Think: { fill: '#EEE7FF', stroke: '#7B61D4', accent: '#4A3494' },
   Clarify: { fill: '#FFF3E2', stroke: '#C89247', accent: '#765624' },
   Plan: { fill: '#E2FBF4', stroke: '#3CB89A', accent: '#1F6B58' },
@@ -145,6 +148,7 @@ function triadFromD3SchemeColorVivid(hex: string): ActionTypeTriad {
 }
 
 const PAIRED_BASE_BY_TYPE: Record<ActionType, string> = {
+  UserRequest: '#3D4F63',
   Think: '#6a3d9a',
   Clarify: '#a6cee3',
   Plan: '#33a02c',
@@ -160,6 +164,7 @@ const PAIRED_BASE_BY_TYPE: Record<ActionType, string> = {
 }
 
 const PAIRED_VIVID_7: Record<ActionType, string> = {
+  UserRequest: '#FFFFFF',
   Think: CONTRAST.Think.fill,
   Plan: CONTRAST.Think.fill,
   Clarify: '#FFE2B3',
@@ -197,6 +202,7 @@ function buildD3Observable(vivid: boolean): Record<ActionType, ActionTypeTriad> 
   const obs = d3.schemeObservable10
   const tab = d3.schemeTableau10
   const colorsByType: Record<ActionType, string> = {
+    UserRequest: '#3D4F63',
     Think: obs[0]!,
     Clarify: obs[3]!,
     Plan: obs[2]!,
@@ -236,6 +242,7 @@ const PALETTES: Record<ActionTypePaletteId, Record<ActionType, ActionTypeTriad>>
      *  #00BFA5 #F06292
      */
     const baseByType: Record<ActionType, string> = {
+      UserRequest: '#FFFFFF',
       Think: '#BEEB9F',
       Clarify: '#79D320',
       Plan: '#ADD5F7',
@@ -254,6 +261,7 @@ const PALETTES: Record<ActionTypePaletteId, Record<ActionType, ActionTypeTriad>>
       const c = baseByType[t]
       out[t] = { fill: c, stroke: c, accent: c }
     })
+    out.UserRequest = CONTRAST.UserRequest
     return out
   })(),
 }

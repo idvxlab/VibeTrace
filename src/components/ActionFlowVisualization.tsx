@@ -1,11 +1,8 @@
-import { useLayoutEffect, useRef, useId, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useId, useMemo, useState } from 'react'
 import * as d3 from 'd3'
 import { Tooltip } from 'react-tooltip'
 import type { MappedAction, OcMessage } from '../types/opencode'
-import {
-  buildEnglishTooltipContent,
-  resolvePartForAction,
-} from '../utils/actionTooltipMapping'
+import { buildCompactMappedActionTooltipHtml } from '../utils/actionTooltipMapping'
 import { actionFlowPalette } from '../styles/actionFlowPalette'
 import {
   type ActionTypePaletteId,
@@ -208,26 +205,6 @@ function escapeHtml(s: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
-}
-
-function buildCompactActionTooltipHtml(act: MappedAction & { row: number }, tooltipMessages?: OcMessage[]): string {
-  const dur = formatDurationMs(act.durationMs)
-  let main = ''
-  if (tooltipMessages?.length) {
-    const part = resolvePartForAction(tooltipMessages, act)
-    if (part) {
-      const kv = buildEnglishTooltipContent(part, { allMessages: tooltipMessages })
-      const lines = kv.body.flatMap((row) => {
-        if (row.kind === 'kv') return [`${row.key}: ${row.value}`]
-        if (row.kind === 'error') return [row.value]
-        if (row.kind === 'about') return ['About:', ...row.headers]
-        return [row.value]
-      })
-      main = `<div class="action-tip-compact-main"><div class="action-tip-compact-head"><strong>${escapeHtml(kv.primaryLabel)}</strong> <span class="action-tip-compact-status">${escapeHtml(kv.statusLabel)}</span></div>${lines.length ? `<div class="action-tip-compact-lines">${lines.map((l) => `<div class="action-tip-compact-line">${escapeHtml(l)}</div>`).join('')}</div>` : ''}</div>`
-    }
-  }
-  const foot = `<div class="action-tip-compact-footer">${escapeHtml(dur)}</div>`
-  return `<div class="action-tip-root action-tip-root--compact">${main}${foot}</div>`
 }
 
 function verticalCenterOffsetY(
@@ -1483,6 +1460,22 @@ export default function ActionFlowVisualization({
   const reactId = useId().replace(/:/g, '')
   const markerId = `action-flow-arrow-${reactId}`
   const tooltipId = `action-flow-tip-${reactId}`
+  /**
+   * react-tooltip v5 的初始扫描 (querySelectorAll) 运行在 useEffect（paint 后），
+   * 而 D3 绘制运行在 useLayoutEffect（paint 前）。理论上 D3 先完成，扫描后执行。
+   *
+   * 但实测发现：react-tooltip 内部 [anchorsBySelect, activeAnchor] effect 在
+   * 扫描完成后立即触发 setActiveAnchor(anchors[0])，导致 activeAnchor dep 变化，
+   * 进而重建 MutationObserver 和事件监听器 effect；在这段"重建空窗期"若用户
+   * 已悬停，mouseenter 没有捕获到。
+   *
+   * 解决方案：延迟 Tooltip 挂载到首次渲染之后，保证 initial scan 运行时
+   * SVG 内容已稳定，且 D3 在此次 useEffect 批次中不会再有属性写入。
+   */
+  const [tooltipMounted, setTooltipMounted] = useState(false)
+  useEffect(() => {
+    setTooltipMounted(true)
+  }, [])
   const layoutEstimate = useMemo(
     () =>
       computeLayout(actions, durationMode, {
@@ -1981,6 +1974,7 @@ export default function ActionFlowVisualization({
 
       const act = node as MappedAction & { row: number }
       const isGhost = act.forkGhost === true
+      const isUserRequest = act.actionType === 'UserRequest'
       const matchesHighlight =
         filterMode === null
           ? true
@@ -2003,22 +1997,42 @@ export default function ActionFlowVisualization({
         .attr('data-action-type', act.actionType)
         .attr('data-action-key', ak)
         .style('opacity', '1')
-      const rect = actionG
-        .append('rect')
-        .attr('x', nx)
-        .attr('y', ny)
-        .attr('width', w)
-        .attr('height', h)
-        .attr('rx', Math.max(1.5, Math.min(4, Math.min(w, h) * 0.22)))
-        .attr('fill', fill)
-        .attr('stroke', 'none')
-        .attr('stroke-width', 0)
+      const actionTarget = (isUserRequest
+        ? actionG
+            .append('circle')
+            .attr('cx', nx + w / 2)
+            .attr('cy', ny + h / 2)
+            .attr('r', Math.max(5, Math.min(w, h) / 2 - 3))
+            .attr('fill', 'transparent')
+            .attr('stroke', iconFill)
+            .attr('stroke-width', 2)
+        : actionG
+            .append('rect')
+            .attr('x', nx)
+            .attr('y', ny)
+            .attr('width', w)
+            .attr('height', h)
+            .attr('rx', Math.max(1.5, Math.min(4, Math.min(w, h) * 0.22)))
+            .attr('fill', fill)
+            .attr('stroke', 'none')
+            .attr('stroke-width', 0)) as unknown as d3.Selection<
+        SVGGraphicsElement,
+        unknown,
+        null,
+        undefined
+      >
+      actionTarget
         .style('cursor', 'pointer')
+        /**
+         * UserRequest 是 transparent fill 的空心圆；默认 SVG hit-test 容易只命中圆环 stroke，
+         * 鼠标在圆心时 target 会退到父级 svg，react-tooltip 就收不到 hover。
+         */
+        .attr('pointer-events', 'all')
         .attr('data-tooltip-id', tooltipId)
-        .attr('data-tooltip-html', buildCompactActionTooltipHtml(act, tooltipMessages))
+        .attr('data-tooltip-html', buildCompactMappedActionTooltipHtml(act, tooltipMessages, formatDurationMs))
         .attr('data-tooltip-place', 'top')
       if (onSelectAction) {
-        rect.on('click', (ev: MouseEvent) => {
+        actionTarget.on('click', (ev: MouseEvent) => {
           ev.stopPropagation()
           onSelectAction(ak)
         })
@@ -2027,26 +2041,27 @@ export default function ActionFlowVisualization({
       actionG.attr('data-filter-dim', matchesHighlight ? '0' : '1')
       const canContext =
         act.messageID && (onForkFromAction || onAnalyzeFromAction) && act.forkGhost !== true
-      const rectEl = rect.node() as SVGRectElement
+      const actionTargetEl = actionTarget.node() as SVGGraphicsElement
       if (canContext) {
-        rect.on('contextmenu', (ev: Event) => {
+        actionTarget.on('contextmenu', (ev: Event) => {
           ev.preventDefault()
           ev.stopPropagation()
-          setContextMenu({ anchorRect: rectEl.getBoundingClientRect(), action: act })
+          setContextMenu({ anchorRect: actionTargetEl.getBoundingClientRect(), action: act })
         })
       }
 
       if (
         !isGhost &&
+        !isUserRequest &&
         (act.status === 'running' || act.status === 'pending') &&
         effectiveColorMode === 'status'
       ) {
-        rect.attr('class', sc.isLongRunning ? 'action-flow-running-long' : 'action-flow-running')
+        actionTarget.attr('class', sc.isLongRunning ? 'action-flow-running-long' : 'action-flow-running')
       }
 
       const actionGNode = actionG.node() as SVGGElement | null
       const iconBox = isPackingLayout ? Math.max(6, Math.min(16, Math.min(w, h) - 4)) : 16
-      const canShowIcon = !isPackingLayout || w >= MIN_W
+      const canShowIcon = !isUserRequest && (!isPackingLayout || w >= MIN_W)
       if (actionGNode && canShowIcon) {
         appendActionFlowIcon(
           actionGNode,
@@ -2576,18 +2591,22 @@ export default function ActionFlowVisualization({
           {scrollInner}
         </div>
       )}
-      <Tooltip
-        id={tooltipId}
-        className="action-flow-react-tooltip"
-        variant="light"
-        delayShow={150}
-        delayHide={220}
-        opacity={1}
-        clickable
-        /** 内层 overflow:auto 滚动会触发全局 scroll，默认会立刻关掉 tooltip */
-        globalCloseEvents={{ scroll: false, resize: true, escape: true }}
-        arrowColor="#f8fafc"
-      />
+      {tooltipMounted && (
+        <Tooltip
+          id={tooltipId}
+          anchorSelect={`[data-tooltip-id="${tooltipId}"]`}
+          className="action-flow-react-tooltip"
+          variant="light"
+          positionStrategy="fixed"
+          delayShow={150}
+          delayHide={220}
+          opacity={1}
+          clickable
+          /** 内层 overflow:auto 滚动会触发全局 scroll，默认会立刻关掉 tooltip */
+          globalCloseEvents={{ scroll: false, resize: true, escape: true }}
+          arrowColor="#f8fafc"
+        />
+      )}
     </div>
     <ActionFlowContextMenu
       menu={contextMenu}

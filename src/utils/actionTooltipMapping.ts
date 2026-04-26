@@ -483,14 +483,25 @@ export function mergeMessagesForActionTooltipLookup(
 
 export function resolvePartForAction(
   allMessages: OcMessage[],
-  act: Pick<MappedAction, 'partId' | 'messageIndex' | 'partIndex'>
+  act: Pick<MappedAction, 'partId' | 'messageIndex' | 'partIndex' | 'messageID'>,
 ): OcMessagePart | undefined {
   if (act.partId) {
     for (const msg of allMessages) {
       const p = msg.parts.find((pr) => pr.id === act.partId)
       if (p) return p
     }
-    return undefined
+  }
+  /**
+   * 子会话动作来自 `buildMappedActionsFromMessages(childMessages)`，其 `messageIndex` 是
+   * **该子数组** 的下标，与 `mergeMessagesForActionTooltipLookup` 的扁平顺序不一致。
+   * 用 assistant 消息的 `messageID` + `partIndex` 在合并表上唯一定位。
+   */
+  if (act.messageID && act.partIndex !== undefined) {
+    for (const msg of allMessages) {
+      if (msg.info.id === act.messageID) {
+        return msg.parts[act.partIndex]
+      }
+    }
   }
   if (act.messageIndex !== undefined && act.partIndex !== undefined) {
     const msg = allMessages[act.messageIndex]
@@ -498,6 +509,76 @@ export function resolvePartForAction(
     return msg.parts[act.partIndex]
   }
   return undefined
+}
+
+function escapeForActionTooltip(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+/**
+ * Action flow 与 treemap 共用的 compact tooltip：正文优先来自消息 part 解析，失败时退化为
+ * `actionType` / `status` / `detail`；底栏为时长 + 粗估 token。
+ */
+export function buildCompactMappedActionTooltipHtml(
+  act: MappedAction & { row: number },
+  tooltipMessages: OcMessage[] | undefined,
+  formatDurationMs: (ms: number) => string,
+): string {
+  if (act.actionType === 'UserRequest') {
+    const text = act.detail?.trim() || '(empty)'
+    return `<div class="action-tip-root action-tip-root--compact"><div class="action-tip-compact-main"><div class="action-tip-compact-head"><strong>${escapeForActionTooltip(
+      'user request',
+    )}</strong></div><div class="action-tip-compact-lines"><div class="action-tip-compact-line">${escapeForActionTooltip(
+      text,
+    )}</div></div></div></div>`
+  }
+
+  let main = ''
+  if (tooltipMessages?.length) {
+    const part = resolvePartForAction(tooltipMessages, act)
+    if (part) {
+      const kv = buildEnglishTooltipContent(part, { allMessages: tooltipMessages })
+      const lines = kv.body.flatMap((row) => {
+        if (row.kind === 'kv') return [`${row.key}: ${row.value}`]
+        if (row.kind === 'error') return [row.value]
+        if (row.kind === 'about') return ['About:', ...row.headers]
+        return [row.value]
+      })
+      main = `<div class="action-tip-compact-main"><div class="action-tip-compact-head"><strong>${escapeForActionTooltip(
+        kv.primaryLabel,
+      )}</strong> <span class="action-tip-compact-status">${escapeForActionTooltip(kv.statusLabel)}</span></div>${
+        lines.length
+          ? `<div class="action-tip-compact-lines">${lines
+              .map((l) => `<div class="action-tip-compact-line">${escapeForActionTooltip(l)}</div>`)
+              .join('')}</div>`
+          : ''
+      }</div>`
+    }
+  }
+  if (!main) {
+    const d = act.detail?.trim() ?? ''
+    const err = act.errorMessage?.trim() ?? ''
+    const snippet = d || err
+    const detailLine = snippet
+      ? `<div class="action-tip-compact-lines"><div class="action-tip-compact-line">${escapeForActionTooltip(
+          snippet.length > 220 ? `${snippet.slice(0, 220)}…` : snippet,
+        )}</div></div>`
+      : ''
+    main = `<div class="action-tip-compact-main"><div class="action-tip-compact-head"><strong>${escapeForActionTooltip(
+      act.actionType,
+    )}</strong> <span class="action-tip-compact-status">${escapeForActionTooltip(act.status)}</span></div>${detailLine}</div>`
+  }
+  const dur = formatDurationMs(act.durationMs)
+  const tokenSuffix =
+    Number.isFinite(act.tokenEstimate) && act.tokenEstimate >= 0
+      ? ` · ${Math.round(act.tokenEstimate).toLocaleString('en-US')} tokens`
+      : ''
+  const foot = `<div class="action-tip-compact-footer">${escapeForActionTooltip(dur)}${tokenSuffix}</div>`
+  return `<div class="action-tip-root action-tip-root--compact">${main}${foot}</div>`
 }
 
 /** @deprecated 使用 resolvePartForAction + mergeMessagesForActionTooltipLookup */
