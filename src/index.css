@@ -1,0 +1,452 @@
+/* OpenCode Design System - Extracted from Figma */
+
+:root {
+  /* Colors */
+  --color-bg-base: #F8F8F8;
+  --color-bg-elevated: #FCFCFC;
+  --color-bg-white: #FFFFFF;
+  
+  --color-border: #DBDBDB;
+  --color-border-light: #E8E8E8;
+  --color-border-strong: #C1C0C0;
+  
+  --color-text-primary: #171717;
+  --color-text-secondary: #6F6F6F;
+  --color-text-tertiary: #8F8F8F;
+  --color-text-placeholder: #ADACAB;
+  
+  --color-accent: #8445BC;
+  --color-success: #0ABE00;
+  --color-warning: #FF9500;
+  --color-error: #FF3B30;
+  
+  --color-gray-100: #E2E2E2;
+  --color-gray-200: #C7C7C7;
+  
+  /* Typography */
+  --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-family-mono: 'IBM Plex Mono', 'Consolas', monospace;
+  
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
+  --font-size-base: 14px;
+  --font-size-lg: 16px;
+  --font-size-xl: 18px;
+  
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.75;
+  
+  /* Spacing */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 24px;
+  --spacing-2xl: 32px;
+  
+  /* Border Radius */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 9999px;
+  
+  /* Shadows */
+  --shadow-sm: 0px 1px 2px rgba(19, 16, 16, 0.06);
+  --shadow-md: 0px 1px 3px rgba(19, 16, 16, 0.08);
+  --shadow-lg: 0px 4px 12px rgba(19, 16, 16, 0.12);
+  
+  /* Layout */
+  --header-height: 40px;
+  --sidebar-width: 280px;
+  --input-height: 140px;
+}
+
+/* Reset */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-primary);
+  background: var(--color-bg-base);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-strong);
+}
+
+/* Focus States */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Utility Classes */
+.font-mono {
+  font-family: var(--font-family-mono);
+}
+
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Animations */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes actionFlowRunningPulse {
+  0%,
+  100% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+  50% {
+    opacity: 0.65;
+    filter: brightness(1.15);
+  }
+}
+
+.action-flow-running {
+  animation: actionFlowRunningPulse 0.9s ease-in-out infinite;
+}
+
+@keyframes actionFlowRunningLongPulse {
+  0%,
+  100% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+  50% {
+    opacity: 0.75;
+    filter: brightness(1.2) drop-shadow(0 0 2px rgba(255, 80, 80, 0.65));
+  }
+}
+
+.action-flow-running-long {
+  animation: actionFlowRunningLongPulse 0.65s ease-in-out infinite;
+}
+
+@keyframes subtaskTimeAlertPulse {
+  0%,
+  100% {
+    color: #C13C3C;
+    opacity: 1;
+  }
+  50% {
+    color: #E24F4F;
+    opacity: 0.65;
+  }
+}
+
+.subtask-time-alert {
+  animation: subtaskTimeAlertPulse 0.75s ease-in-out infinite;
+}
+
+/* 居中图标叠在 rect 之上，须穿透指针事件，否则会挡 tooltip 与 rect 上的 contextmenu */
+.action-flow-action-icon {
+  pointer-events: none;
+}
+
+/* Action 流 react-tooltip：浅色底、随内容增高（不强制滚动） */
+.action-flow-react-tooltip {
+  min-width: 260px;
+  width: max-content;
+  max-width: min(480px, 94vw) !important;
+  min-height: 0;
+  max-height: none !important;
+  overflow: visible !important;
+  white-space: normal !important;
+  padding: 10px 12px !important;
+  border-radius: 8px !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.1) !important;
+  font-size: 12px !important;
+  line-height: 1.45 !important;
+  color: #0f172a !important;
+  background: #f8fafc !important;
+}
+
+.action-flow-react-tooltip .action-tip-root {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+}
+
+.action-flow-react-tooltip .action-tip-main {
+  flex: 0 0 auto;
+}
+
+.action-flow-react-tooltip .action-tip-footer {
+  flex: 0 0 auto;
+  padding-top: 8px;
+  margin-top: 4px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.action-flow-react-tooltip .action-tip-footer .action-tip-kv {
+  padding: 3px 0;
+  border-bottom: none;
+}
+
+.action-flow-react-tooltip .action-tip-root--compact {
+  min-width: 200px;
+  max-width: min(360px, 92vw);
+}
+
+.action-flow-react-tooltip .action-tip-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 12px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.action-flow-react-tooltip .action-tip-primary {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.action-flow-react-tooltip .action-tip-status {
+  font-size: 12px;
+  color: #475569;
+  font-weight: 500;
+}
+
+.action-flow-react-tooltip .action-tip-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.action-flow-react-tooltip .action-tip-text {
+  font-size: 12px;
+  color: #334155;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid #f1f5f9;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.action-flow-react-tooltip .action-tip-sep {
+  height: 1px;
+  background: #e2e8f0;
+  margin: 8px 0;
+}
+
+.action-flow-react-tooltip .action-tip-kv {
+  display: grid;
+  grid-template-columns: minmax(4.5em, 7.5em) minmax(0, 1fr);
+  gap: 4px 10px;
+  padding: 5px 0;
+  border-bottom: 1px solid #f1f5f9;
+  align-items: start;
+}
+
+.action-flow-react-tooltip .action-tip-kv:last-child {
+  border-bottom: none;
+}
+
+.action-flow-react-tooltip .action-tip-k {
+  color: #64748b;
+  font-weight: 600;
+}
+
+.action-flow-react-tooltip .action-tip-v {
+  color: #0f172a;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.action-flow-react-tooltip .action-tip-about {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.action-flow-react-tooltip .action-tip-about-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 4px;
+}
+
+.action-flow-react-tooltip .action-tip-about-line {
+  font-size: 12px;
+  color: #0f172a;
+  word-break: break-word;
+  white-space: pre-wrap;
+  line-height: 1.4;
+  margin-top: 2px;
+}
+
+.action-flow-react-tooltip .action-tip-error {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #7f1d1d;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-top: 2px;
+  max-width: 100%;
+}
+
+.action-flow-react-tooltip .action-tip-compact-head {
+  color: #334155;
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.action-flow-react-tooltip .action-tip-compact-snippet {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: #64748b;
+  font-weight: 400;
+}
+
+.action-flow-react-tooltip .action-tip-compact-main {
+  margin-bottom: 6px;
+}
+
+.action-flow-react-tooltip .action-tip-compact-status {
+  color: #64748b;
+  font-weight: 500;
+}
+
+.action-flow-react-tooltip .action-tip-compact-lines {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.action-flow-react-tooltip .action-tip-compact-line {
+  font-size: 11px;
+  color: #475569;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.action-flow-react-tooltip .action-tip-compact-footer {
+  padding-top: 6px;
+  margin-top: 4px;
+  border-top: 1px solid #e2e8f0;
+  font-size: 11px;
+  color: #64748b;
+}
+
+/**
+ * 可选：ActionFlowVisualization 传 hideScrollbar 时加此类，隐藏滚动条但仍可滚轮滑动。
+ * 默认不隐藏，保留系统滚动条。
+ */
+.action-flow-scroll--hide-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.action-flow-scroll--hide-scrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+/* SubtaskCard：时长 Filter 滑块 — 缩小 thumb，与 9–10px 文案尺度协调 */
+input[type='range'].subtask-card-duration-filter-range {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+}
+
+input[type='range'].subtask-card-duration-filter-range:focus {
+  outline: none;
+}
+
+input[type='range'].subtask-card-duration-filter-range::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 999px;
+  background: #d4d4d4;
+}
+
+input[type='range'].subtask-card-duration-filter-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 8px;
+  height: 8px;
+  margin-top: -2.5px;
+  border-radius: 50%;
+  background: #5c5c5c;
+  border: 1px solid #3a3a3a;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+}
+
+input[type='range'].subtask-card-duration-filter-range::-moz-range-track {
+  height: 3px;
+  border-radius: 999px;
+  background: #d4d4d4;
+}
+
+input[type='range'].subtask-card-duration-filter-range::-moz-range-thumb {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #5c5c5c;
+  border: 1px solid #3a3a3a;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+}
