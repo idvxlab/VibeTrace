@@ -337,10 +337,12 @@ function App() {
 
   /** 子任务 Packing View 全屏开关（独立的 dialog 模式） */
   const [subtaskFullscreenOpen, setSubtaskFullscreenOpen] = useState(false)
-  /** 子任务面板扩展模式：原地拉宽，每张卡片左侧出 treemap，并接管联动 */
-  const [subtaskPanelExpanded, setSubtaskPanelExpanded] = useState(false)
-  /** 右侧子任务面板全局布局模式（作用于所有子任务卡） */
-  const [subtaskFlowLayoutMode, setSubtaskFlowLayoutMode] = useState<'timeline' | 'packing'>('timeline')
+  /** 右侧子任务面板全局布局模式：时间轴 / packing / 汇总面板 */
+  const [subtaskFlowLayoutMode, setSubtaskFlowLayoutMode] = useState<
+    'timeline' | 'packing' | 'summary' | 'sankey'
+  >(
+    'timeline',
+  )
   /**
    * 联动选中：
    *   - kind 'type'   → 高亮整个 actionType 的所有 action（treemap cell + 所有同类 rect）
@@ -1210,7 +1212,7 @@ function App() {
 
         <div
           style={{
-            width: subtaskPanelExpanded ? 'min(70vw, 1260px)' : 630,
+            width: 630,
             flexShrink: 0,
             background: '#FFFFFF',
             borderLeft: '1px solid #E8E8E8',
@@ -1297,56 +1299,71 @@ function App() {
                   />
                   packing
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setSubtaskFlowLayoutMode('summary')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: 0,
+                    fontSize: 11,
+                    lineHeight: '16px',
+                    color: subtaskFlowLayoutMode === 'summary' ? '#2B2B2B' : '#A3A3A3',
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: 3,
+                      boxSizing: 'border-box',
+                      background: subtaskFlowLayoutMode === 'summary' ? '#C6C6C6' : 'transparent',
+                      border:
+                        subtaskFlowLayoutMode === 'summary'
+                          ? '1px solid #8A8A8A'
+                          : '1px solid #C6C6C6',
+                    }}
+                  />
+                  summary
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSubtaskFlowLayoutMode('sankey')}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: 0,
+                    fontSize: 11,
+                    lineHeight: '16px',
+                    color: subtaskFlowLayoutMode === 'sankey' ? '#2B2B2B' : '#A3A3A3',
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: 3,
+                      boxSizing: 'border-box',
+                      background: subtaskFlowLayoutMode === 'sankey' ? '#C6C6C6' : 'transparent',
+                      border:
+                        subtaskFlowLayoutMode === 'sankey'
+                          ? '1px solid #8A8A8A'
+                          : '1px solid #C6C6C6',
+                    }}
+                  />
+                  sankey
+                </button>
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <button
-                type="button"
-                onClick={() => {
-                  setSubtaskPanelExpanded((v) => !v)
-                  if (subtaskPanelExpanded) setSelection(null)
-                }}
-                aria-label={subtaskPanelExpanded ? '收起 Overview' : '展开 Overview'}
-                title={subtaskPanelExpanded ? '收起 Overview' : '展开 Overview（拉宽面板 + Treemap + 联动）'}
-                disabled={visibleSubtasks.length === 0}
-                style={{
-                  width: 26,
-                  height: 26,
-                  border: 'none',
-                  background: subtaskPanelExpanded ? '#EEF1E5' : 'transparent',
-                  cursor: visibleSubtasks.length === 0 ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  borderRadius: 6,
-                  color: visibleSubtasks.length === 0
-                    ? '#C6C6C6'
-                    : (subtaskPanelExpanded ? '#5A6B41' : '#5C5C5C'),
-                }}
-                onMouseEnter={(e) => {
-                  if (visibleSubtasks.length === 0) return
-                  if (!subtaskPanelExpanded) e.currentTarget.style.background = '#F3F3F3'
-                }}
-                onMouseLeave={(e) => {
-                  if (!subtaskPanelExpanded) e.currentTarget.style.background = 'transparent'
-                }}
-              >
-                {subtaskPanelExpanded ? (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M15 3h6v6" />
-                    <path d="M9 21H3v-6" />
-                    <path d="M21 3l-7 7" />
-                    <path d="M3 21l7-7" />
-                  </svg>
-                ) : (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M9 3H3v6" />
-                    <path d="M15 21h6v-6" />
-                    <path d="M3 3l7 7" />
-                    <path d="M21 21l-7-7" />
-                  </svg>
-                )}
-              </button>
               <button
                 type="button"
                 onClick={() => setSubtaskFullscreenOpen(true)}
@@ -1402,7 +1419,6 @@ function App() {
               listScrollRef={subtaskScrollRef}
               sessionDirectory={activeSessionDirectory}
               forkPanelSnapshotBundle={forkPanelSnapshotBundle}
-              leadingTreemapSize={subtaskPanelExpanded ? 200 : undefined}
               flowLayoutMode={subtaskFlowLayoutMode}
               selection={selection}
               onSelectActionType={handleSelectActionType}
