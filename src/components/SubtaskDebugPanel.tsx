@@ -1,5 +1,5 @@
 import { Fragment, type RefObject, useEffect, useMemo, useRef, useState } from 'react'
-import { sankey as d3Sankey, sankeyLinkHorizontal } from 'd3-sankey'
+import { sankey as d3Sankey } from 'd3-sankey'
 import type { SankeyLink, SankeyNode } from 'd3-sankey'
 import type { ActionType, MappedAction, OcMessage } from '../types/opencode'
 import type { AssistantSubtask } from '../utils/subtaskGrouping'
@@ -60,15 +60,38 @@ type SankeyRawLink = {
 type SankeyNodeEx = SankeyNode<SankeyRawNode, SankeyRawLink> & SankeyRawNode
 type SankeyLinkEx = SankeyLink<SankeyRawNode, SankeyRawLink> & SankeyRawLink
 
-const sankeyLinkPath = sankeyLinkHorizontal<SankeyRawNode, SankeyRawLink>()
+function buildSankeyLinkPath(link: SankeyLink<SankeyRawNode, SankeyRawLink>): string {
+  const sourceNode = typeof link.source === 'object' ? (link.source as SankeyNodeEx) : null
+  const targetNode = typeof link.target === 'object' ? (link.target as SankeyNodeEx) : null
+  if (!sourceNode || !targetNode) return ''
+  const x0 = sourceNode.x1 ?? 0
+  const x1 = targetNode.x0 ?? 0
+  const y0 = link.y0 ?? 0
+  const y1 = link.y1 ?? 0
+  if (!Number.isFinite(x0) || !Number.isFinite(x1) || !Number.isFinite(y0) || !Number.isFinite(y1)) return ''
+  const halfWidth = Math.max(SANKEY_MIN_LINK_WIDTH_PX, link.width ?? 0) / 2
+  const top0 = y0 - halfWidth
+  const bottom0 = y0 + halfWidth
+  const top1 = y1 - halfWidth
+  const bottom1 = y1 + halfWidth
+  // Use a filled ribbon instead of a thick stroke. Thick SVG strokes expand along
+  // the curve normal and create crescent artifacts when adjacent columns are close.
+  if (x1 - x0 <= 6) {
+    return `M${x0},${top0}L${x1},${top1}L${x1},${bottom1}L${x0},${bottom0}Z`
+  }
+  const xm = (x0 + x1) / 2
+  return `M${x0},${top0}C${xm},${top0} ${xm},${top1} ${x1},${top1}L${x1},${bottom1}C${xm},${bottom1} ${xm},${bottom0} ${x0},${bottom0}Z`
+}
 
-/** 子任务少时，单列 bar 高度上限（再挤不下时整图会整体缩小以塞进视口） */
-const SANKEY_MAX_NODE_BAR_PX = 56
 /**
  * bar 与「相邻列间空隙」的比例：留空 = barWidth * ratio（ratio 越大 bar 越窄、连线越易辨认）
  * 例：1.5 即空隙约等于 1.5 倍条宽
  */
-const SANKEY_GAP_PER_BAR = 1.5
+const SANKEY_GAP_PER_BAR = 2.1
+/** Y 轴基准：每个子任务默认占用高度（超出面板时再整体压缩） */
+const SANKEY_ROW_BASE_PX = 50
+/** Sankey 连线最小可见宽度（避免高密场景被 1px 下限“增肥”） */
+const SANKEY_MIN_LINK_WIDTH_PX = 0.3
 
 export default function SubtaskDebugPanel({
   messages,
@@ -353,7 +376,7 @@ export default function SubtaskDebugPanel({
 
     const width = Math.max(1, sankeyViewportSize.width)
     const height = Math.max(1, sankeyViewportSize.height)
-    const LEFT = 68
+    const LEFT = 36
     const RIGHT = 24
     const TOP = 18
     const BOTTOM = 12
@@ -367,11 +390,12 @@ export default function SubtaskDebugPanel({
      */
     const nCol = stepCount
     const denom = nCol + SANKEY_GAP_PER_BAR * Math.max(0, nCol - 1)
-    const nodeWidth = Math.max(3, Math.min(20, Math.floor(innerW / Math.max(4, denom))))
+    const nodeWidth = Math.max(2, Math.min(14, Math.floor(innerW / Math.max(4, denom))))
     const engine = d3Sankey<SankeyRawNode, SankeyRawLink>()
       .nodeId((d) => d.id)
       .nodeAlign((node) => node.step)
-      .nodeSort((a, b) => a.actionType.localeCompare(b.actionType, 'en'))
+      // Keep X fixed by step, let d3 freely optimize Y order to reduce crossings.
+      .iterations(64)
       .nodeWidth(nodeWidth)
       .nodePadding(nodePadding)
       .extent([
@@ -393,15 +417,12 @@ export default function SubtaskDebugPanel({
       node.x1 = node.x0 + nodeWidth
     }
 
-    const maxH = Math.max(1, ...nodes.map((n) => (n.y1 ?? 0) - (n.y0 ?? 0)))
     const minY = Math.min(...nodes.map((n) => n.y0 ?? 0))
     const maxY = Math.max(...nodes.map((n) => n.y1 ?? 0))
     const contentH = Math.max(1, maxY - minY)
-    const scaleH = Math.min(
-      1,
-      innerH / contentH,
-      maxH > SANKEY_MAX_NODE_BAR_PX ? SANKEY_MAX_NODE_BAR_PX / maxH : 1,
-    )
+    const rowCount = Math.max(1, rowsForSankey.length)
+    const desiredContentH = Math.min(innerH, rowCount * SANKEY_ROW_BASE_PX)
+    const scaleH = Math.max(0.01, desiredContentH / contentH)
     const offY = TOP + (innerH - contentH * scaleH) / 2
     for (const node of nodes) {
       node.y0 = offY + ((node.y0 ?? 0) - minY) * scaleH
@@ -480,34 +501,18 @@ export default function SubtaskDebugPanel({
               )
             })}
           </defs>
-          {Array.from({ length: sankeyLayout.stepCount }, (_, i) => {
-            const x = sankeyLayout.columnX[i] ?? 0
-            return (
-              <text
-                key={`step-label-${i}`}
-                x={x}
-                y={10}
-                textAnchor="middle"
-                dominantBaseline="hanging"
-                style={{ fontSize: 9, fill: '#8A8A8A', fontWeight: 600 }}
-              >
-                Step {i + 1}
-              </text>
-            )
-          })}
           {sankeyLayout.links.map((link, i) => {
             const sourceNode = typeof link.source === 'object' ? (link.source as SankeyNodeEx) : null
             const targetNode = typeof link.target === 'object' ? (link.target as SankeyNodeEx) : null
             if (!sourceNode || !targetNode) return null
-            const pathD =
-              sankeyLinkPath(link as SankeyLink<SankeyRawNode, SankeyRawLink>) ?? ''
+            const pathD = buildSankeyLinkPath(link as SankeyLink<SankeyRawNode, SankeyRawLink>)
             return (
               <path
                 key={`${sourceNode.id}->${targetNode.id}`}
                 d={pathD}
-                fill="none"
-                stroke={`url(#sankey-grad-${i})`}
-                strokeWidth={Math.max(1, link.width ?? 1)}
+                fill={`url(#sankey-grad-${i})`}
+                fillOpacity={0.45}
+                stroke="none"
               >
                 <title>{`${sourceNode.actionType} → ${targetNode.actionType}\nCount: ${link.value}`}</title>
               </path>
@@ -529,19 +534,10 @@ export default function SubtaskDebugPanel({
                   fill={node.actionType === 'UserRequest' ? '#8F8F8F' : triad.stroke}
                   fillOpacity={1}
                   stroke="none"
-                  rx={2}
+                  rx={0}
                 >
                   <title>{`${node.actionType}\nStep: ${node.step + 1}\nWeight: ${Math.round(node.value ?? 0)}`}</title>
                 </rect>
-                {h >= 12 ? (
-                  <text
-                    x={(node.x1 ?? 0) + 4}
-                    y={(node.y0 ?? 0) + Math.min(h - 2, 10)}
-                    style={{ fontSize: 9, fill: '#6A6A6A' }}
-                  >
-                    {node.actionType}
-                  </text>
-                ) : null}
               </g>
             )
           })}
@@ -570,6 +566,7 @@ export default function SubtaskDebugPanel({
       >
         <ActionTypeColorLegend
           paletteId={actionTypePaletteId}
+          variant={flowLayoutMode === 'sankey' ? 'sankey-bars' : 'default'}
         />
       </div>
       <div

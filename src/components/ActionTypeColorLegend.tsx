@@ -10,6 +10,7 @@ const fontSans =
 
 type Props = {
   paletteId: ActionTypePaletteId
+  variant?: 'default' | 'sankey-bars'
 }
 
 /**
@@ -17,6 +18,7 @@ type Props = {
  */
 export default function ActionTypeColorLegend({
   paletteId,
+  variant = 'default',
 }: Props) {
   const buildIconMarkup = (type: ActionType): string => {
     const raw = getActionFlowIconSvg(type)
@@ -46,9 +48,25 @@ export default function ActionTypeColorLegend({
       stroke: c.stroke,
       icon: buildIconMarkup(type),
       iconColor: c.accent,
+      sankeyBarColor: type === 'UserRequest' ? '#8F8F8F' : c.stroke,
     }
   })
   const items = typeItems
+  const firstRowOrder: ActionType[] = [
+    'UserRequest',
+    'Think',
+    'Plan',
+    'Write',
+    'Response',
+    'Clarify',
+    'Permission',
+  ]
+  const firstRowSet = new Set<ActionType>(firstRowOrder)
+  const firstRowItems = firstRowOrder
+    .map((type) => items.find((item) => item.key === type))
+    .filter((item): item is (typeof items)[number] => Boolean(item))
+  const secondRowItems = items.filter((item) => !firstRowSet.has(item.key))
+  const itemRows = [firstRowItems, secondRowItems]
 
   return (
     <div
@@ -72,90 +90,107 @@ export default function ActionTypeColorLegend({
           Legend (Action Type)
         </span>
       </div>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))`,
-          columnGap: 4,
-          rowGap: 2,
-          alignItems: 'center',
-          width: '100%',
-        }}
-      >
-        {items.map((item) => (
-          <div
-            key={`${item.key}-label`}
-            title={item.label}
-            style={{
-              fontSize: 9,
-              fontWeight: 600,
-              color: '#2B2B2B',
-              textAlign: 'center',
-              fontFamily: fontSans,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              lineHeight: '12px',
-            }}
-          >
-            {item.label}
-          </div>
-        ))}
-        {items.map((item) => (
-          <div
-            key={`${item.key}-color`}
-            style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}
-          >
-            {item.key === 'UserRequest' ? (
-              <span
-                title={`${item.label} · ${item.stroke}`}
+      {itemRows.map((row, rowIndex) => (
+        <div
+          key={`legend-row-${rowIndex}`}
+          style={{
+            display: 'grid',
+            gridTemplateColumns: `repeat(${firstRowItems.length}, minmax(0, 1fr))`,
+            columnGap: 8,
+            alignItems: 'start',
+            width: '100%',
+          }}
+        >
+          {row.map((item) => (
+            <div
+              key={item.key}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 2,
+              }}
+            >
+              <div
+                title={item.label}
                 style={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: '50%',
-                  boxSizing: 'border-box',
-                  background: 'transparent',
-                  border: `2px solid ${item.stroke}`,
-                  flexShrink: 0,
-                  display: 'inline-block',
-                }}
-              />
-            ) : (
-              <span
-                title={`${item.label} · ${item.fill}`}
-                style={{
-                  width: 18,
-                  height: 18,
-                  borderRadius: 3,
-                  boxSizing: 'border-box',
-                  background: item.fill,
-                  border: `1.5px solid ${item.stroke}`,
-                  flexShrink: 0,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
+                  fontSize: 9,
+                  fontWeight: 600,
+                  color: '#2B2B2B',
+                  textAlign: 'center',
+                  fontFamily: fontSans,
+                  whiteSpace: 'nowrap',
+                  lineHeight: '12px',
                 }}
               >
-                {item.icon ? (
+                {item.label}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                {variant === 'sankey-bars' ? (
                   <span
+                    title={`${item.label} · ${item.sankeyBarColor}`}
+                    style={{
+                      width: 18,
+                      height: 10,
+                      borderRadius: 2,
+                      boxSizing: 'border-box',
+                      background: item.sankeyBarColor,
+                      flexShrink: 0,
+                      display: 'inline-flex',
+                    }}
+                  />
+                ) : item.key === 'UserRequest' ? (
+                  <span
+                    title={`${item.label} · ${item.stroke}`}
                     style={{
                       width: 12,
                       height: 12,
-                      lineHeight: 0,
-                      color: item.iconColor,
+                      borderRadius: '50%',
+                      boxSizing: 'border-box',
+                      background: 'transparent',
+                      border: `2px solid ${item.stroke}`,
+                      flexShrink: 0,
+                      display: 'inline-block',
+                    }}
+                  />
+                ) : (
+                  <span
+                    title={`${item.label} · ${item.fill}`}
+                    style={{
+                      width: 18,
+                      height: 18,
+                      borderRadius: 3,
+                      boxSizing: 'border-box',
+                      background: item.fill,
+                      border: `1.5px solid ${item.stroke}`,
+                      flexShrink: 0,
                       display: 'inline-flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      pointerEvents: 'none',
                     }}
-                    dangerouslySetInnerHTML={{ __html: item.icon }}
-                  />
-                ) : null}
-              </span>
-            )}
-          </div>
-        ))}
-      </div>
+                  >
+                    {item.icon ? (
+                      <span
+                        style={{
+                          width: 12,
+                          height: 12,
+                          lineHeight: 0,
+                          color: item.iconColor,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          pointerEvents: 'none',
+                        }}
+                        dangerouslySetInnerHTML={{ __html: item.icon }}
+                      />
+                    ) : null}
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      ))}
     </div>
   )
 }
