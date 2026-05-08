@@ -22,13 +22,13 @@ Web dashboard for **[OpenCode](https://opencode.ai/)**. It connects to a local O
 
 OpenScope requires the OpenCode CLI running in HTTP headless mode.
 
-Follow the upstream installation guide, then verify the installation:
+Follow the **[upstream installation guide](https://opencode.ai/download), then verify the installation:
 
 ```bash
 opencode --version
 ```
 
-Reference: OpenCode documentation.
+
 
 ---
 
