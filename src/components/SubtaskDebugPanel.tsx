@@ -1,4 +1,5 @@
-import { Fragment, type RefObject, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, type RefObject, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { Tooltip } from 'react-tooltip'
 import type { MappedAction, OcMessage } from '../types/opencode'
 import type { AssistantSubtask } from '../utils/subtaskGrouping'
 import type { ForkFromActionContext, ForkPanelSnapshotBundle } from '../utils/forkPanelSnapshot'
@@ -12,6 +13,18 @@ import {
 import { buildMappedActionsFromMessages, collectTaskChildDescriptors } from '../utils/actionMapping'
 import { actionKey } from '../utils/actionKey'
 import { getMessages } from '../services/opencodeApi'
+import {
+  buildCompactMappedActionTooltipHtml,
+  mergeMessagesForActionTooltipLookup,
+} from '../utils/actionTooltipMapping'
+
+/** Mirrors `formatDurationMs` in ActionFlowVisualization for summary tooltips */
+function formatSummaryTooltipDuration(durationMs: number): string {
+  if (!Number.isFinite(durationMs) || durationMs <= 0) return '—'
+  const sec = durationMs / 1000
+  if (sec < 0.01) return '<0.01s'
+  return `${sec.toFixed(2)}s`
+}
 
 interface SubtaskDebugPanelProps {
   messages: OcMessage[]
@@ -46,11 +59,18 @@ export default function SubtaskDebugPanel({
   onSelectAction,
   flowLayoutMode = 'timeline',
 }: SubtaskDebugPanelProps) {
+  const summaryTooltipSafeId = useId().replace(/:/g, '')
+  const summaryTooltipId = `subtask-summary-tip-${summaryTooltipSafeId}`
+  const [tooltipMounted, setTooltipMounted] = useState(false)
   const [colorBy, setColorBy] = useState<'tokens' | 'type'>('type')
   const actionTypePaletteId: ActionTypePaletteId = DEFAULT_ACTION_TYPE_PALETTE_ID
   const [childSessionMessages, setChildSessionMessages] = useState<Record<string, OcMessage[]>>({})
   const summaryViewportRef = useRef<HTMLDivElement | null>(null)
   const [summaryViewportSize, setSummaryViewportSize] = useState({ width: 0, height: 0 })
+
+  useEffect(() => {
+    setTooltipMounted(true)
+  }, [])
 
   const summarySegments = useMemo(
     () =>
@@ -69,6 +89,7 @@ export default function SubtaskDebugPanel({
           subtaskId: subtask.subtask_id,
           parentActions,
           childDescriptors,
+          segmentMessages,
         }
       }),
     [visibleSubtasks, messages],
@@ -117,24 +138,28 @@ export default function SubtaskDebugPanel({
     return () => observer.disconnect()
   }, [flowLayoutMode])
 
-  const summaryRows = summarySegments.map(({ sourceIndex, rowIndex, subtaskId, parentActions, childDescriptors }) => {
-    const childActions = childDescriptors.flatMap((desc) => {
-      const msgs = childSessionMessages[desc.childSessionID] ?? []
-      return buildMappedActionsFromMessages(msgs).map((a, i) => ({
-        ...a,
-        /** Place after parent task for readable ordering within the subtask. */
-        sortTime: desc.anchorSortTime + 0.0005 + i * 0.0000001,
-      }))
-    })
-    const actions = [...parentActions, ...childActions].sort((a, b) => a.sortTime - b.sortTime)
-    return {
-      sourceIndex,
-      rowIndex,
-      actions,
-      subtaskId,
-      sequenceSignature: actions.map((a) => a.actionType),
-    }
-  })
+  const summaryRows = summarySegments.map(
+    ({ sourceIndex, rowIndex, subtaskId, parentActions, childDescriptors, segmentMessages }) => {
+      const childActions = childDescriptors.flatMap((desc) => {
+        const msgs = childSessionMessages[desc.childSessionID] ?? []
+        return buildMappedActionsFromMessages(msgs).map((a, i) => ({
+          ...a,
+          /** Place after parent task for readable ordering within the subtask. */
+          sortTime: desc.anchorSortTime + 0.0005 + i * 0.0000001,
+        }))
+      })
+      const actions = [...parentActions, ...childActions].sort((a, b) => a.sortTime - b.sortTime)
+      return {
+        sourceIndex,
+        rowIndex,
+        actions,
+        subtaskId,
+        sequenceSignature: actions.map((a) => a.actionType),
+        segmentMessages,
+        childDescriptors,
+      }
+    },
+  )
   /**
    * Lexicographic sort by action-type sequence (no section headers).
    * Rows whose timeline starts with UserRequest are placed first so “user turn → …”
@@ -159,107 +184,115 @@ export default function SubtaskDebugPanel({
   const summaryLayout = useMemo(() => {
     const DEFAULT_BLOCK_W = 28
     const DEFAULT_BLOCK_H = 36
-    const ROW_LABEL_W = 28
     const rowCount = Math.max(1, summaryRowsSorted.length)
     const maxActionCount = Math.max(1, ...summaryRowsSorted.map((r) => r.actions.length))
-    const availableW = Math.max(1, summaryViewportSize.width - ROW_LABEL_W)
+    const availableW = Math.max(1, summaryViewportSize.width)
     const availableH = Math.max(1, summaryViewportSize.height)
     const blockWidth = Math.max(2, Math.floor(Math.min(DEFAULT_BLOCK_W, availableW / maxActionCount)))
     const blockHeight = Math.max(2, Math.floor(Math.min(DEFAULT_BLOCK_H, availableH / rowCount)))
-    return { blockWidth, blockHeight, rowLabelWidth: ROW_LABEL_W }
+    return { blockWidth, blockHeight }
   }, [summaryRowsSorted, summaryViewportSize.width, summaryViewportSize.height])
 
   const summaryPanel = (
-    <div
-      ref={summaryViewportRef}
-      style={{
-        width: '100%',
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 0,
-        padding: 0,
-        border: 'none',
-        borderRadius: 0,
-        background: 'transparent',
-      }}
-    >
-      {summaryRowsSorted.length === 0 ? (
-        <span style={{ color: '#AAA', fontSize: 11 }}>No subtasks</span>
-      ) : (
-        summaryRowsSorted.map((row) => {
-          return (
-            <div key={`${row.subtaskId}:${row.sourceIndex}:${row.rowIndex}`}>
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 0,
-                  margin: 0,
-                  height: summaryLayout.blockHeight,
-                }}
-              >
-                <span
-                  style={{
-                    width: summaryLayout.rowLabelWidth,
-                    flexShrink: 0,
-                    textAlign: 'right',
-                    fontSize: 10,
-                    fontWeight: 600,
-                    color: '#7A7A7A',
-                    paddingRight: 0,
-                  }}
-                  title={`Subtask #${row.rowIndex + 1}`}
-                >
-                  #{row.rowIndex + 1}
-                </span>
+    <>
+      <div
+        ref={summaryViewportRef}
+        style={{
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 0,
+          padding: 0,
+          border: 'none',
+          borderRadius: 0,
+          background: 'transparent',
+        }}
+      >
+        {summaryRowsSorted.length === 0 ? (
+          <span style={{ color: '#AAA', fontSize: 11 }}>No subtasks</span>
+        ) : (
+          summaryRowsSorted.map((row) => {
+            const tooltipMessages = mergeMessagesForActionTooltipLookup(
+              row.segmentMessages,
+              row.childDescriptors.flatMap((d) => childSessionMessages[d.childSessionID] ?? []),
+            )
+            return (
+              <div key={`${row.subtaskId}:${row.sourceIndex}:${row.rowIndex}`}>
                 <div
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: 0,
-                    overflow: 'hidden',
-                    whiteSpace: 'nowrap',
+                    margin: 0,
                     height: summaryLayout.blockHeight,
-                    padding: 0,
                   }}
                 >
-                  {row.actions.length === 0 ? (
-                    <span style={{ color: '#B0B0B0', fontSize: 10 }}>No actions</span>
-                  ) : (
-                    row.actions.map((action) => {
-                      const paletteTriad = getActionTypeTriad(actionTypePaletteId, action.actionType)
-                      const tooltip = [
-                        `Subtask #${row.rowIndex + 1}`,
-                        `Step: ${(action.partIndex ?? 0) + 1}`,
-                        `Type: ${action.actionType}`,
-                        `Status: ${action.status}`,
-                        `Duration: ${Math.max(0, Math.round(action.durationMs))}ms`,
-                        `Tokens: ${Math.max(0, Math.round(action.tokenEstimate))}`,
-                      ].join('\n')
-                      return (
-                        <span
-                          key={actionKey(action)}
-                          title={tooltip}
-                          style={{
-                            width: summaryLayout.blockWidth,
-                            height: summaryLayout.blockHeight,
-                            borderRadius: 0,
-                            flexShrink: 0,
-                            background: action.actionType === 'UserRequest' ? '#8F8F8F' : paletteTriad.fill,
-                            border: 'none',
-                          }}
-                        />
-                      )
-                    })
-                  )}
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 0,
+                      overflow: 'hidden',
+                      whiteSpace: 'nowrap',
+                      height: summaryLayout.blockHeight,
+                      flex: 1,
+                      minWidth: 0,
+                      padding: 0,
+                    }}
+                  >
+                    {row.actions.length === 0 ? (
+                      <span style={{ color: '#B0B0B0', fontSize: 10 }}>No actions</span>
+                    ) : (
+                      row.actions.map((action) => {
+                        const paletteTriad = getActionTypeTriad(actionTypePaletteId, action.actionType)
+                        const tipHtml = buildCompactMappedActionTooltipHtml(
+                          action,
+                          tooltipMessages,
+                          formatSummaryTooltipDuration,
+                        )
+                        return (
+                          <span
+                            key={actionKey(action)}
+                            data-tooltip-id={summaryTooltipId}
+                            data-tooltip-html={tipHtml}
+                            data-tooltip-place="top"
+                            style={{
+                              width: summaryLayout.blockWidth,
+                              height: summaryLayout.blockHeight,
+                              borderRadius: 0,
+                              flexShrink: 0,
+                              background:
+                                action.actionType === 'UserRequest' ? '#8F8F8F' : paletteTriad.fill,
+                              border: 'none',
+                            }}
+                          />
+                        )
+                      })
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          )
-        })
+            )
+          })
+        )}
+      </div>
+      {tooltipMounted && (
+        <Tooltip
+          id={summaryTooltipId}
+          anchorSelect={`[data-tooltip-id="${summaryTooltipId}"]`}
+          className="action-flow-react-tooltip"
+          variant="light"
+          positionStrategy="fixed"
+          delayShow={150}
+          delayHide={220}
+          opacity={1}
+          clickable
+          globalCloseEvents={{ scroll: false, resize: true, escape: true }}
+          arrowColor="#f8fafc"
+        />
       )}
-    </div>
+    </>
   )
 
   return (
