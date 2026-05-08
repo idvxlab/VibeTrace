@@ -11,7 +11,7 @@ import {
 import { mergeMessagesForActionTooltipLookup } from './actionTooltipMapping'
 import { getMessages } from '../services/opencodeApi'
 
-const STORAGE_PREFIX = 'cockpit:fork-panel:'
+const STORAGE_PREFIX = 'openscope:fork-panel:'
 
 /** Passed when forking from a SubtaskCard action menu */
 export type ForkFromActionContext = {

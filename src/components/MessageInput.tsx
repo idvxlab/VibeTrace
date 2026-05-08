@@ -146,11 +146,11 @@ export default function MessageInput({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <label htmlFor="cockpit-composer-model" style={{ fontSize: 11, color: '#666', flexShrink: 0 }}>
+            <label htmlFor="openscope-composer-model" style={{ fontSize: 11, color: '#666', flexShrink: 0 }}>
               模型
             </label>
             <select
-              id="cockpit-composer-model"
+              id="openscope-composer-model"
               value={composerModelRef.trim() ? composerModelRef.trim() : ''}
               onChange={(e) => onComposerModelRefChange?.(e.target.value)}
               disabled={disabled || !onComposerModelRefChange || composerModelsLoading}

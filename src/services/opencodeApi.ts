@@ -318,7 +318,7 @@ export async function sendMessage(
       : modelBody
         ? 'VITE_OPENCODE_DEFAULT_MODEL'
         : 'server default (omit JSON.model)'
-  console.info('[cockpit-ui][OpenCode] sendMessage', {
+  console.info('[OpenScope][OpenCode] sendMessage', {
     sessionId,
     directory: directory ?? null,
     model: modelBody ? `${modelBody.providerID}/${modelBody.modelID}` : null,

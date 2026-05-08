@@ -63,7 +63,7 @@ const POLL_ASSISTANT_INTERVAL_MS = 2000
 const POLL_ASSISTANT_MAX_ROUNDS = 90
 const MANUAL_DIRS_KEY = 'openscope.manual.directories.v1'
 const CLOSED_DIRS_KEY = 'openscope.closed.directories.v1'
-const COMPOSER_MODEL_LS_KEY = 'cockpit-ui.opencodeComposerModelRef'
+const COMPOSER_MODEL_LS_KEY = 'openscope.opencodeComposerModelRef'
 
 function loadComposerModelRefFromLs(): string {
   try {
