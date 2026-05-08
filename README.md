@@ -1,7 +1,7 @@
 # VibeTrace: See how your agents think
 **Visualizing Agent Runtime Behavior for Human Intervention in Vibe Coding**
 
-Web dashboard for **[OpenCode](https://opencode.ai/)**. It connects to a local OpenCode HTTP server (REST + Server-Sent Events) so you can work across directories, inspect live message streams, todos, subtasks and **agent action-flow visualization**—with cross-links between todos, transcripts, and individual flow blocks.
+A web dashboard for **[OpenCode](https://opencode.ai/)** that connects to a local OpenCode HTTP server (REST + Server-Sent Events), enabling developers to work across multiple directories while inspecting live message streams, todos, subtasks, and visualized agent execution flows. The system provides rich cross-linking between todos, transcripts, and individual action-flow blocks, supporting real-time monitoring, navigation, and intervention during agent runtime execution.
 
 ---
 
