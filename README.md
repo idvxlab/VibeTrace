@@ -8,28 +8,9 @@ Web dashboard for **[OpenCode](https://opencode.ai/)**. It connects to a local O
 
 ## UI preview
 
-Representative captures from the action-flow panel (uniform step widths vs. duration scaling).
-
-<table>
-<tr>
-<td width="50%" valign="top" align="center">
-
-**Standard actions**  
-*Actions duration off — consistent block spacing for structure*
-
+<p align="center">
 <img src="./fig/timeline-view.png" alt="OpenScope action flow with uniform step widths" width="100%" />
-
-</td>
-<td width="50%" valign="top" align="center">
-
-**Duration mode**  
-*Actions duration on — block width reflects elapsed time per action*
-
-<img src="./fig/duration-view.png" alt="OpenScope action flow with duration-proportional blocks" width="100%" />
-
-</td>
-</tr>
-</table>
+</p>
 
 ---
 
