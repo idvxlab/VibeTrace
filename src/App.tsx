@@ -650,7 +650,7 @@ function App() {
     return new Set(st.linkedTodoIds)
   }, [linkedSubtaskIndex, assistantSubtasks])
 
-  /** Parent message bubble index for connector + scroll-to when an action glyph is selected. */
+  /** Parent message index for scroll-to when an action glyph is selected in the flow. */
   const linkedMessageIndexForConnector = useMemo(() => {
     if (!selection) return null
     const mid = actionKeyMessageId(selection.actionKey)
@@ -670,6 +670,20 @@ function App() {
       subtaskIndex: selection.subtaskIndex,
     }
   }, [linkedSubtaskIndex, selection, linkedMessageIndexForConnector])
+
+  /** Planning / no linked todo ids: same message→flow geometry as selection, anchored on first segment action */
+  const noTodoAnchor = useMemo(() => {
+    if (linkedSubtaskIndex === null) return null
+    const st = assistantSubtasks[linkedSubtaskIndex]
+    if (!st || subtaskShouldUseTodoLink(st)) return null
+    const actionKey = firstFlowAnchorKeyForSubtaskSegment(st, messages, Date.now())
+    if (!actionKey) return null
+    const mid = actionKeyMessageId(actionKey)
+    if (!mid) return null
+    const messageIndex = messages.findIndex((m) => m.info.id === mid)
+    if (messageIndex < 0) return null
+    return { messageIndex, actionKey }
+  }, [linkedSubtaskIndex, assistantSubtasks, messages])
 
   const toggleSubtaskLink = useCallback((si: number) => {
     setLinkedSubtaskIndex((prev) => {
@@ -1466,6 +1480,7 @@ function App() {
           subtaskIndex={linkedSubtaskIndex}
           linkedTodoIds={linkedTodoIds}
           linkedMessageToAction={linkedMessageToAction}
+          noTodoAnchor={noTodoAnchor}
         />
         {analysisAction ? (
           <ActionAnalysisModal action={analysisAction} onClose={() => setAnalysisAction(null)} />

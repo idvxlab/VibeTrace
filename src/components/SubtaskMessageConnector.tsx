@@ -2,49 +2,6 @@ import { useId, useLayoutEffect, useState } from 'react'
 import type { RefObject } from 'react'
 import { actionFlowPalette } from '../styles/actionFlowPalette'
 
-/** Viewport rect for an action `g.afv-action` — prefer the painted block (`rect` / `circle`) so later nodes align like the first. */
-function boundingRectViewportForActionGroup(actionG: SVGGraphicsElement): DOMRect | null {
-  const directShape = actionG.querySelector(
-    ':scope > rect, :scope > circle',
-  ) as SVGGraphicsElement | null
-  const geom = directShape ?? actionG
-  const r = geom.getBoundingClientRect()
-  if (r.width >= 0.75 && r.height >= 0.75) return r
-
-  const svg = actionG.closest('svg')
-  if (!svg) return null
-  try {
-    const bb = actionG.getBBox()
-    const ctm = actionG.getScreenCTM()
-    if (!ctm || bb.width <= 0 || bb.height <= 0) return r.width >= 0.75 ? r : null
-
-    const pt = svg.createSVGPoint()
-    const corners: readonly [number, number][] = [
-      [bb.x, bb.y],
-      [bb.x + bb.width, bb.y],
-      [bb.x + bb.width, bb.y + bb.height],
-      [bb.x, bb.y + bb.height],
-    ]
-    let minX = Infinity
-    let minY = Infinity
-    let maxX = -Infinity
-    let maxY = -Infinity
-    for (const [x, y] of corners) {
-      pt.x = x
-      pt.y = y
-      const p = pt.matrixTransform(ctm)
-      minX = Math.min(minX, p.x)
-      minY = Math.min(minY, p.y)
-      maxX = Math.max(maxX, p.x)
-      maxY = Math.max(maxY, p.y)
-    }
-    if (!Number.isFinite(minX)) return null
-    return new DOMRect(minX, minY, maxX - minX, maxY - minY)
-  } catch {
-    return r.width >= 0.75 ? r : null
-  }
-}
-
 function escAttrSelectorValue(s: string): string {
   return typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
     ? CSS.escape(s)
@@ -58,8 +15,13 @@ interface Props {
   subtaskScrollRef: RefObject<HTMLDivElement | null>
   subtaskIndex: number | null
   linkedTodoIds: Set<string> | null
-  /** When set, draws a segment from this message bubble to the selected action glyph in the linked card. */
+  /** Subtask selected + flow glyph selected: transcript block → same glyph in the linked card */
   linkedMessageToAction?: { messageIndex: number; actionKey: string; subtaskIndex: number } | null
+  /**
+   * No todo-row connector (e.g. planning): still draw the same message→flow line using the segment’s
+   * first anchor (`firstFlowAnchorKeyForSubtaskSegment`).
+   */
+  noTodoAnchor?: { messageIndex: number; actionKey: string } | null
 }
 
 /**
@@ -126,6 +88,7 @@ export default function SubtaskMessageConnector({
   subtaskIndex,
   linkedTodoIds,
   linkedMessageToAction,
+  noTodoAnchor = null,
 }: Props) {
   const uid = useId().replace(/:/g, '')
   const markerTodoId = `subtask-link-arrow-${uid}`
@@ -147,56 +110,44 @@ export default function SubtaskMessageConnector({
       const cr = container.getBoundingClientRect()
       setSvgSize({ w: cr.width, h: cr.height })
 
-      /** With an action glyph selected: only transcript↔flow (no todo line). Subtask-linked only: todo↔card. */
       let nextTodoPath = ''
       let nextMsgAction = ''
       const useTodo =
         subtaskIndex !== null && linkedTodoIds !== null && linkedTodoIds.size > 0
-      const msgToActionLink =
+      const selectedLink =
         linkedMessageToAction &&
         linkedMessageToAction.subtaskIndex === subtaskIndex &&
         subtaskIndex !== null
           ? linkedMessageToAction
           : null
 
-      const resolveMsgActionEndpoints = (): { src: DOMRect; dst: DOMRect } | null => {
-        if (!msgToActionLink || !msgScroll || !stScroll || subtaskIndex === null) return null
-        const msgWrap = msgScroll.querySelector(`[data-message-index="${msgToActionLink.messageIndex}"]`)
+      /**
+       * Message column → subtask **card edge** (same touchdown as todo→card), not onto a flow glyph.
+       * Start: transcript chip / bubble for `actionKey`; end: linked card’s left edge at vertical center.
+       */
+      const msgToFlowPath = (messageIndex: number, actionKey: string): string => {
+        if (!msgScroll || !stScroll || subtaskIndex === null) return ''
+        const msgWrap = msgScroll.querySelector(`[data-message-index="${messageIndex}"]`)
         const card = stScroll.querySelector(`[data-subtask-card-index="${subtaskIndex}"]`)
-        if (!msgWrap || !card) return null
-        const esc = escAttrSelectorValue(msgToActionLink.actionKey)
+        if (!msgWrap || !card) return ''
+        const esc = escAttrSelectorValue(actionKey)
         const partEl = msgWrap.querySelector(`[data-transcript-action-key="${esc}"]`)
         const pr = partEl?.getBoundingClientRect()
         const msgRViewport =
           pr && pr.width >= 0.5 && pr.height >= 0.5 ? pr : msgWrap.getBoundingClientRect()
+        if (msgRViewport.width < 0.5 || msgRViewport.height < 0.5) return ''
 
-        let actionEl: SVGGraphicsElement | null = null
-        for (const g of card.querySelectorAll('g.afv-action[data-action-key]')) {
-          if (g.getAttribute('data-action-key') === msgToActionLink.actionKey) {
-            actionEl = g as SVGGraphicsElement
-            break
-          }
-        }
-        let targetViewport = actionEl ? boundingRectViewportForActionGroup(actionEl) : null
-        if (!targetViewport || targetViewport.width < 1.5) {
-          const svgRect = (
-            card.querySelector('svg[data-action-flow-root="1"]') as SVGSVGElement | null
-          )?.getBoundingClientRect()
-          if (svgRect) targetViewport = svgRect
-        }
-        if (!targetViewport || targetViewport.width < 1.5) return null
-        return { src: msgRViewport, dst: targetViewport }
+        const srCard = card.getBoundingClientRect()
+
+        const x1 = msgRViewport.right - cr.left
+        const y1 = msgRViewport.top - cr.top + msgRViewport.height / 2
+        const x2 = srCard.left - cr.left
+        const y2 = srCard.top - cr.top + srCard.height / 2
+        return orthogonalTodoBridge(x1, y1, x2, y2)
       }
 
-      if (msgToActionLink) {
-        const ends = resolveMsgActionEndpoints()
-        if (ends) {
-          const x1 = ends.src.right - cr.left
-          const y1 = ends.src.top - cr.top + ends.src.height / 2
-          const x2 = ends.dst.left - cr.left - 4
-          const y2 = ends.dst.top - cr.top + ends.dst.height / 2
-          nextMsgAction = orthogonalTodoBridge(x1, y1, x2, y2)
-        }
+      if (selectedLink) {
+        nextMsgAction = msgToFlowPath(selectedLink.messageIndex, selectedLink.actionKey)
       } else if (useTodo && todoScroll && stScroll && subtaskIndex !== null && linkedTodoIds) {
         const card = stScroll.querySelector(`[data-subtask-card-index="${subtaskIndex}"]`)
         if (card) {
@@ -211,10 +162,11 @@ export default function SubtaskMessageConnector({
             nextTodoPath = orthogonalTodoBridge(x1, y1, x2, y2)
           }
         }
+      } else if (noTodoAnchor && subtaskIndex !== null) {
+        nextMsgAction = msgToFlowPath(noTodoAnchor.messageIndex, noTodoAnchor.actionKey)
       }
 
       setTodoPathD(nextTodoPath)
-
       setMsgActionPathD(nextMsgAction)
     }
 
@@ -245,6 +197,7 @@ export default function SubtaskMessageConnector({
     subtaskIndex,
     linkedTodoIds,
     linkedMessageToAction,
+    noTodoAnchor,
   ])
 
   if ((!todoPathD && !msgActionPathD) || svgSize.w <= 0) return null
