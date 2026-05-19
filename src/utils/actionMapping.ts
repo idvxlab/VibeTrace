@@ -25,6 +25,18 @@ function estimateTokensFromStrings(...chunks: (string | undefined)[]): number {
   return Math.max(0, Math.round(n / 4))
 }
 
+/** 工具 `output` 有时是 JSON 对象；统一成可估算/可展示的字符串 */
+function toolOutputOrErrorAsString(v: unknown): string {
+  if (v == null) return ''
+  if (typeof v === 'string') return v
+  if (typeof v === 'number' || typeof v === 'boolean' || typeof v === 'bigint') return String(v)
+  try {
+    return JSON.stringify(v)
+  } catch {
+    return String(v)
+  }
+}
+
 function toolStatusToActionStatus(
   part: ToolPart,
   message: OcMessage,
@@ -48,6 +60,8 @@ function mapToolToActionType(tool: string): ActionType | null {
   if (isTodoWriteTool(tool) || t === 'todoread' || t === 'todo_read') return 'Plan'
   if (SUBAGENT_TOOLS.has(t)) return 'Subagent'
   if (['glob', 'grep', 'read'].includes(t)) return 'Read'
+  /** OpenCode / 插件可能注册为 `skill_router`、`SkillRouter`（归一化后为 skillrouter）等 */
+  if (t === 'skill_router' || t === 'skillrouter') return 'SkillRouter'
   if (['write', 'edit', 'multiedit', 'patch'].includes(t)) return 'Write'
   if (t === 'bash' || t === 'shell') return 'Shell'
   if (t === 'websearch' || t === 'web_fetch' || t === 'webfetch') return 'Search'
@@ -84,7 +98,7 @@ function durationForTool(part: ToolPart, message: OcMessage, nowMs: number): num
   if (typeof completed === 'number' && completed > created) {
     return Math.max(10, completed - created)
   }
-  const out = part.state?.output ?? ''
+  const out = toolOutputOrErrorAsString(part.state?.output)
   const inp = part.state?.input
   const inpStr = inp ? JSON.stringify(inp) : ''
   return Math.max(10, 80 + estimateTokensFromStrings(out, inpStr) * 30)
@@ -140,6 +154,13 @@ function parseJsonRecord(raw?: string): Record<string, unknown> | null {
   return null
 }
 
+function outputRecordFromToolState(output: unknown): Record<string, unknown> | null {
+  if (output == null) return null
+  if (typeof output === 'object' && !Array.isArray(output)) return output as Record<string, unknown>
+  if (typeof output === 'string') return parseJsonRecord(output)
+  return null
+}
+
 /**
  * 统一提取 task/subagent 的子会话 id。
  * 兼容 running/completed 两阶段里可能出现的字段：
@@ -150,8 +171,8 @@ function parseJsonRecord(raw?: string): Record<string, unknown> | null {
 export function extractChildSessionIdFromToolPart(part: ToolPart): string | undefined {
   const input = part.state?.input ?? {}
   const meta = (part.state?.metadata ?? {}) as Record<string, unknown>
-  const out = part.state?.output ?? ''
-  const outJson = parseJsonRecord(out)
+  const outStr = toolOutputOrErrorAsString(part.state?.output)
+  const outJson = outputRecordFromToolState(part.state?.output)
   const outMeta =
     outJson && typeof outJson.metadata === 'object' && outJson.metadata
       ? (outJson.metadata as Record<string, unknown>)
@@ -172,7 +193,7 @@ export function extractChildSessionIdFromToolPart(part: ToolPart): string | unde
   ])
   if (direct) return direct
 
-  const m = out.match(/task_id:\s*([A-Za-z0-9_-]+)/i)
+  const m = outStr.match(/task_id:\s*([A-Za-z0-9_-]+)/i)
   if (m?.[1]) return m[1]
   return undefined
 }
@@ -424,8 +445,8 @@ function partToMappedAction(
       if (!mappedType) return null
       const inp = part.state?.input
       const inpStr = inp ? JSON.stringify(inp) : ''
-      const outStr = part.state?.output ?? ''
-      const errStr = part.state?.error ?? ''
+      const outStr = toolOutputOrErrorAsString(part.state?.output)
+      const errStr = toolOutputOrErrorAsString(part.state?.error)
       const parsedErr = parseToolError(errStr)
       const childSessionID = isSubagentToolName(part.tool)
         ? extractChildSessionIdFromToolPart(part)

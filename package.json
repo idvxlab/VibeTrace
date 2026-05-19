@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "smoke:opencode": "node scripts/smoke-opencode-session.mjs"
+    "smoke:opencode": "node scripts/smoke-opencode-session.mjs",
+    "worker:py": "python memory_worker/server.py"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.2.2",

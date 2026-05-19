@@ -98,7 +98,8 @@ export type ToolPart = {
     /** question tools may remain pending until the user responds */
     status: 'pending' | 'running' | 'completed' | 'error'
     input?: Record<string, unknown>
-    output?: string
+    /** 多数工具为字符串；部分工具（如 `skill_router`）可能返回结构化 JSON */
+    output?: string | unknown
     /** Server-generated title (read path, websearch summary, bash description, etc.) */
     title?: string
     /** Some tools (e.g. task) stash child session ids in metadata for running + completed states */
@@ -187,6 +188,7 @@ export type ActionType =
   | 'Subagent'
   | 'Response'
   | 'Read'
+  | 'SkillRouter'
   | 'Write'
   | 'Shell'
   | 'Search'

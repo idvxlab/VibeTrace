@@ -6,19 +6,49 @@ import type {
 } from '../types/opencode'
 
 /**
- * OpenCode HTTP base URL (must match the address printed by `opencode serve` in your terminal).
- * - Easiest fix: add `.env.local` at the repo root with `VITE_OPENCODE_BASE=http://127.0.0.1:61830` (swap port), then restart `npm run dev`
- * - Or change the default URL returned below
+ * OpenCode HTTP base URL — 由 `vite.config.ts` 在构建时注入：
+ * `VITE_OPENCODE_BASE` → 否则 `OPENCODE_BASE` → 否则默认端口。
+ *
+ * 配置 `.env.local` 时任意使用 `VITE_OPENCODE_BASE` 或 `OPENCODE_BASE`（与 memory-worker 对齐），二者不一致时以 `VITE_OPENCODE_BASE` 为准。
  */
 function resolveOpencodeBase(): string {
-  const raw = import.meta.env.VITE_OPENCODE_BASE
-  if (typeof raw === 'string' && raw.trim()) {
-    return raw.trim().replace(/\/$/, '')
-  }
-  return 'http://127.0.0.1:4096'
+  const base =
+    typeof __OPENCODE_HTTP_BASE__ !== 'undefined' && __OPENCODE_HTTP_BASE__.trim()
+      ? __OPENCODE_HTTP_BASE__.trim()
+      : 'http://127.0.0.1:4096'
+  return base.replace(/\/$/, '')
 }
 
 const BASE = resolveOpencodeBase()
+
+/** 防止 OpenCode 请求永久挂起导致前端一直 loading；≤0 表示不启用超时 */
+export function opencodeFetchTimeoutMs(): number {
+  const raw = import.meta.env.VITE_OPENCODE_FETCH_TIMEOUT_MS
+  if (typeof raw !== 'string') return 45_000
+  const n = Number(raw.trim())
+  if (!Number.isFinite(n)) return 45_000
+  if (n <= 0) return 0
+  return n
+}
+
+/**
+ * 为 fetch 附加超时信号（可与外部 AbortSignal 合并）。
+ * 非常老的浏览器若无 AbortSignal.timeout 则退化为不设超时。
+ */
+function fetchSignal(existing?: AbortSignal): AbortSignal | undefined {
+  const ms = opencodeFetchTimeoutMs()
+  if (!Number.isFinite(ms) || ms <= 0) return existing
+  try {
+    const deadline = AbortSignal.timeout(ms)
+    if (!existing) return deadline
+    if (typeof AbortSignal.any === 'function') {
+      return AbortSignal.any([existing, deadline])
+    }
+    return deadline
+  } catch {
+    return existing
+  }
+}
 
 /**
  * OpenCode `POST /session/:id/message` expects `model` as `{ providerID, modelID }`, not a `provider/model` string.
@@ -86,7 +116,10 @@ function extractProjectDirectory(item: unknown): string | null {
 
 export async function getSessions(options?: { directory?: string }): Promise<OcSession[]> {
   const url = `${BASE}/session`
-  const res = await fetch(url, { headers: withDirectoryHeaders({}, options?.directory) })
+  const res = await fetch(url, {
+    headers: withDirectoryHeaders({}, options?.directory),
+    signal: fetchSignal(),
+  })
   if (!res.ok) throw new Error(`Failed to fetch sessions: ${res.status}`)
   return res.json()
 }
@@ -204,14 +237,20 @@ export async function deleteSession(sessionId: string, directory?: string): Prom
 
 export async function getTodos(sessionId: string, directory?: string): Promise<OcTodo[]> {
   const url = `${BASE}/session/${sessionId}/todo`
-  const res = await fetch(url, { headers: withDirectoryHeaders({}, directory) })
+  const res = await fetch(url, {
+    headers: withDirectoryHeaders({}, directory),
+    signal: fetchSignal(),
+  })
   if (!res.ok) throw new Error(`Failed to fetch todos: ${res.status}`)
   return res.json()
 }
 
 export async function getMessages(sessionId: string, _reason?: string, directory?: string): Promise<OcMessage[]> {
   const url = `${BASE}/session/${sessionId}/message`
-  const res = await fetch(url, { headers: withDirectoryHeaders({}, directory) })
+  const res = await fetch(url, {
+    headers: withDirectoryHeaders({}, directory),
+    signal: fetchSignal(),
+  })
   if (!res.ok) throw new Error(`Failed to fetch messages: ${res.status}`)
   return res.json()
 }

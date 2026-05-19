@@ -53,6 +53,14 @@ interface MessagePanelProps {
   composerModelsLoading?: boolean
   composerModelsError?: string | null
   envBootstrapModel?: string | null
+  /** 首次拉取会话列表进行中（OpenCode 未响应时会长时间停留） */
+  sessionsIndexingBusy?: boolean
+  /** 会话列表拉取失败（如 BASE 错误、网络、服务未启动） */
+  sessionsBootstrapError?: string | null
+  /** 当前会话的 GET /message 失败 */
+  sessionDataFetchError?: string | null
+  /** 重试加载会话列表 */
+  onRetrySessionsBootstrap?: () => void
 }
 
 export default function MessagePanel({
@@ -87,8 +95,11 @@ export default function MessagePanel({
   composerModelsLoading = false,
   composerModelsError = null,
   envBootstrapModel = null,
+  sessionsIndexingBusy = false,
+  sessionsBootstrapError = null,
+  sessionDataFetchError = null,
+  onRetrySessionsBootstrap,
 }: MessagePanelProps) {
-  void onRefresh
   const hasInlineQuestion = messagesHaveOpenQuestionWithInput(messages)
   const blockComposerForQuestion =
     hasInlineQuestion ||
@@ -146,6 +157,74 @@ export default function MessagePanel({
           onCommit={onSessionTitleCommit}
         />
       </div>
+
+      {(sessionsIndexingBusy || sessionsBootstrapError || sessionDataFetchError) && (
+        <div
+          role="status"
+          style={{
+            flexShrink: 0,
+            padding: '8px 16px',
+            fontSize: 12,
+            lineHeight: 1.45,
+            borderBottom: '1px solid #E8E8E8',
+            background: sessionsBootstrapError || sessionDataFetchError ? '#FFF7ED' : '#F0F9FF',
+            color: sessionsBootstrapError || sessionDataFetchError ? '#9A3412' : '#0369A1',
+          }}
+        >
+          {sessionsBootstrapError ? (
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
+              <span style={{ fontWeight: 600 }}>无法加载会话列表</span>
+              <span style={{ flex: '1 1 200px', minWidth: 0 }}>{sessionsBootstrapError}</span>
+              {onRetrySessionsBootstrap ? (
+                <button
+                  type="button"
+                  onClick={() => onRetrySessionsBootstrap()}
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    borderRadius: 6,
+                    border: '1px solid #EA580C',
+                    background: '#FFF',
+                    color: '#C2410C',
+                    cursor: 'pointer',
+                  }}
+                >
+                  重试
+                </button>
+              ) : null}
+            </div>
+          ) : sessionDataFetchError ? (
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
+              <span style={{ fontWeight: 600 }}>当前会话消息加载失败</span>
+              <span style={{ flex: '1 1 200px', minWidth: 0 }}>{sessionDataFetchError}</span>
+              <button
+                type="button"
+                onClick={() => onRefresh()}
+                style={{
+                  padding: '4px 10px',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  borderRadius: 6,
+                  border: '1px solid #EA580C',
+                  background: '#FFF',
+                  color: '#C2410C',
+                  cursor: 'pointer',
+                }}
+              >
+                重新拉取
+              </button>
+            </div>
+          ) : (
+            <span>
+              <span style={{ fontWeight: 600 }}>正在连接 OpenCode 并加载会话…</span>
+              <span style={{ color: '#64748b', marginLeft: 8 }}>
+                若一直停留，请确认服务已启动，且 Vite 环境变量中的 OpenCode 地址与浏览器可访问（含 CORS）。
+              </span>
+            </span>
+          )}
+        </div>
+      )}
 
       {waitingForAssistantReply && !loading && (
         <div

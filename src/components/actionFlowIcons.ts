@@ -94,6 +94,14 @@ const RAW: Record<ActionType, string> = {
 <path d="M8 13.25V15.25M4.5 15.25H11.5" stroke="#2B2B2B" stroke-linecap="round"/>
 </svg>`,
 
+  /** 与 Read 同图标色系：`skill_router` 归入读/取数一类 */
+  SkillRouter: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect x="0.5" y="1.25" width="15" height="12" rx="2.5" stroke="#2B2B2B"/>
+<path d="M5.5 7.38158L8 4.75L10.5 7.38158" stroke="#2B2B2B" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M8 4.75L8 9.75" stroke="#2B2B2B" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M8 13.25V15.25M4.5 15.25H11.5" stroke="#2B2B2B" stroke-linecap="round"/>
+</svg>`,
+
   Write: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
 <path d="M6.5431 1.40302L2.75 1.40302C1.64543 1.40302 0.749999 2.29845 0.749999 3.40302L0.75 13.403C0.75 14.5076 1.64543 15.403 2.75 15.403L12.75 15.403C13.8546 15.403 14.75 14.5076 14.75 13.403L14.75 8.14376" stroke="#2B2B2B" stroke-linecap="round"/>
 <path d="M12.1852 1.34069L14.5061 3.66157C14.5263 3.68177 14.5263 3.71457 14.5061 3.73477L7.46956 10.7713C7.46484 10.776 7.45915 10.7798 7.45299 10.7824L3.49347 12.4203C3.47641 12.4273 3.46791 12.4261 3.46378 12.4251C3.45694 12.4235 3.44645 12.4189 3.43684 12.4093C3.42747 12.3998 3.42325 12.3898 3.42165 12.383C3.42072 12.3789 3.41945 12.3704 3.42649 12.3533L5.06443 8.3938C5.06703 8.38767 5.07077 8.38194 5.07548 8.37723L12.112 1.34069C12.1322 1.32053 12.165 1.3206 12.1852 1.34069Z" stroke="#1E1E1E" stroke-linejoin="round"/>

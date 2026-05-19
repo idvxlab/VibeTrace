@@ -11,4 +11,8 @@ interface ImportMetaEnv {
   readonly VITE_OPENCODE_DEFAULT_MODEL?: string
   /** Optional `agent` string appended alongside the payload when the server expects it */
   readonly VITE_OPENCODE_DEFAULT_AGENT?: string
+  /** Local memory-worker backend base, e.g. http://127.0.0.1:8714 */
+  readonly VITE_MEMORY_WORKER_BASE?: string
+  /** Enable noisy debug console logs when set to true */
+  readonly VITE_DEBUG_VERBOSE_LOGS?: string
 }

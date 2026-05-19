@@ -70,15 +70,22 @@ Create a local environment file:
 cp .env.example .env.local
 ```
 
-Then set the OpenCode server endpoint:
+Then set the OpenCode server endpoint (either name works; use one line):
 
 ```env
 VITE_OPENCODE_BASE=http://127.0.0.1:4096
 ```
 
+or the same value as memory-worker:
+
+```env
+OPENCODE_BASE=http://127.0.0.1:4096
+```
+
 | Variable | Description |
 | --- | --- |
-| `VITE_OPENCODE_BASE` | Base URL used for all VibeTrace → OpenCode API requests. Must match the running OpenCode server address. |
+| `VITE_OPENCODE_BASE` **or** `OPENCODE_BASE` | Base URL for all VibeTrace → OpenCode API calls. Vite merges **`VITE_OPENCODE_BASE` first**, then falls back to **`OPENCODE_BASE`**, then `http://127.0.0.1:4096`. Set both only if you intentionally want the UI to override the worker-only variable. |
+| `VITE_MEMORY_WORKER_BASE` *(optional)* | Base URL for the Python memory-worker (`npm run worker:py`). Defaults to `http://127.0.0.1:8714`. Full ingest pipeline and **how `trace.v1` is built** → [docs/memory-worker.md](./docs/memory-worker.md). |
 | `VITE_OPENCODE_DEFAULT_MODEL` *(optional)* | Overrides the default bootstrap model using the format `provider/model`. If omitted, OpenCode's default model will be used. |
 
 ---

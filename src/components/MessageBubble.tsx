@@ -31,9 +31,21 @@ interface MessageBubbleProps {
 }
 
 /** Minimal markdown pass (fixed font size, italic disabled) */
-function renderMarkdown(text: string): string {
-  if (!text) return ''
-  return text
+function renderMarkdown(text: string | unknown): string {
+  const raw =
+    typeof text === 'string'
+      ? text
+      : text == null
+        ? ''
+        : (() => {
+            try {
+              return JSON.stringify(text)
+            } catch {
+              return String(text)
+            }
+          })()
+  if (!raw) return ''
+  return raw
     // fenced code
     .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre style="background:#F5F5F5;padding:8px;border-radius:4px;margin:6px 0;font-family:IBM Plex Mono,monospace;font-size:11px"><code>$2</code></pre>')
     // inline code
@@ -346,8 +358,17 @@ function PartView({
   }
 }
 
-function extractToolError(errorRaw?: string): { name?: string; text?: string } {
-  const raw = (errorRaw ?? '').trim()
+function extractToolError(errorRaw?: string | unknown): { name?: string; text?: string } {
+  let raw = ''
+  if (typeof errorRaw === 'string') raw = errorRaw
+  else if (errorRaw != null) {
+    try {
+      raw = JSON.stringify(errorRaw)
+    } catch {
+      raw = String(errorRaw)
+    }
+  }
+  raw = raw.trim()
   if (!raw) return {}
   const i = raw.indexOf(':')
   if (i <= 0) return { name: raw, text: raw }
@@ -356,6 +377,17 @@ function extractToolError(errorRaw?: string): { name?: string; text?: string } {
   return {
     name: name || raw,
     text: text || raw,
+  }
+}
+
+function toolPayloadToDisplayString(v: unknown): string {
+  if (v == null) return ''
+  if (typeof v === 'string') return v
+  if (typeof v === 'number' || typeof v === 'boolean' || typeof v === 'bigint') return String(v)
+  try {
+    return JSON.stringify(v, null, 2)
+  } catch {
+    return String(v)
   }
 }
 
@@ -376,14 +408,18 @@ function ToolCallView({
   const state = part.state
   const input = state?.input
   const output = state?.output
+  const outputDisplay = toolPayloadToDisplayString(output)
   const hasInput = Boolean(input && Object.keys(input).length > 0)
-  const hasOutput = Boolean(output && output.trim().length > 0)
+  const hasOutput = outputDisplay.trim().length > 0
   const status = state?.status
   const errorRaw = state?.error
-  const hasError = Boolean(errorRaw && errorRaw.trim().length > 0)
+  const hasError = toolPayloadToDisplayString(errorRaw).trim().length > 0
   const parsedError = extractToolError(errorRaw)
+  const errorDisplayForTip = parsedError.text?.trim()
+    ? parsedError.text
+    : toolPayloadToDisplayString(errorRaw)
   const errorTooltip = hasError
-    ? `${parsedError.name ? `Error: ${parsedError.name}\n` : ''}${parsedError.text ?? errorRaw}`
+    ? `${parsedError.name ? `Error: ${parsedError.name}\n` : ''}${errorDisplayForTip}`
     : undefined
 
   const questionItems =
@@ -515,9 +551,9 @@ function ToolCallView({
             wordBreak: 'break-all',
           }}>
             {activeTab === 'input' && (inputText || '(empty input)')}
-            {activeTab === 'output' && (output || '(empty output)')}
+            {activeTab === 'output' && (outputDisplay || '(empty output)')}
             {activeTab === 'error' && (
-              `${parsedError.name || 'Tool Error'}\n${parsedError.text || errorRaw || ''}`.trim()
+              `${parsedError.name || 'Tool Error'}\n${parsedError.text || toolPayloadToDisplayString(errorRaw) || ''}`.trim()
             )}
           </div>
         </div>

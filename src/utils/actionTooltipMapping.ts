@@ -376,6 +376,17 @@ function englishToolBody(part: ToolPart, ctx: { allMessages?: OcMessage[] }): To
       if (n) return [{ kind: 'kv', key: 'Skill', value: n }]
       return []
     }
+    case 'skill_router':
+    case 'skillrouter': {
+      const lines: TooltipBodyLine[] = []
+      const outRaw = st?.output
+      if (outRaw != null) {
+        const body =
+          typeof outRaw === 'string' ? outRaw : JSON.stringify(outRaw as object, null, 2)
+        lines.push({ kind: 'text', value: body.trim() ? body : '(empty)' })
+      }
+      return lines.length ? lines : [{ kind: 'kv', key: 'Skill router', value: '(no output yet)' }]
+    }
     case 'apply_patch': {
       const files = meta.files
       if (Array.isArray(files)) {

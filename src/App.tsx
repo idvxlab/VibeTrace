@@ -56,6 +56,12 @@ import {
   type ForkPanelSnapshotBundle,
 } from './utils/forkPanelSnapshot'
 import { buildTurnTrace, findLatestAssistantStopMessage } from './utils/traceExtraction'
+import { ingestTraceToMemoryWorker } from './services/memoryWorkerApi'
+import {
+  collectInternalSessionIdsFromIngest,
+  registerMemoryWorkerInternalSessionIds,
+  shouldSkipTraceIngestForSession,
+} from './utils/memoryWorkerSessions'
 
 declare global {
   interface Window {
@@ -70,10 +76,24 @@ declare global {
 type TodosSnapshotMap = Record<string, OcTodo[]>
 const AUTO_ABORT_STUCK_RUNNING_AFTER_MS = 24 * 60 * 60 * 1000
 const TRACE_EXTRACTION_DEBOUNCE_MS = 650
+const SSE_SYNC_DEBOUNCE_MS = 350
+const DEBUG_VERBOSE_LOGS =
+  String(import.meta.env.VITE_DEBUG_VERBOSE_LOGS ?? '')
+    .trim()
+    .toLowerCase() === 'true'
 
 /** If SSE lags after send, poll GET /message until an assistant message appears (streaming / long runs) */
 const POLL_ASSISTANT_INTERVAL_MS = 2000
 const POLL_ASSISTANT_MAX_ROUNDS = 90
+
+function debugLog(...args: unknown[]): void {
+  if (!DEBUG_VERBOSE_LOGS) return
+  console.log(...args)
+}
+
+function lastTraceStopStorageKey(sessionId: string): string {
+  return `vibetrace:last-trace-stop:${sessionId}`
+}
 
 function loadComposerModelRefFromLs(): string {
   try {
@@ -230,7 +250,6 @@ function App() {
   /** User message sent; still polling for assistant completion */
   const [waitingForAssistantReply, setWaitingForAssistantReply] = useState(false)
   const [latestTurnTrace, setLatestTurnTrace] = useState<TurnTrace | null>(null)
-  const [traceCopyState, setTraceCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const processedTraceTurnKeysRef = useRef<Set<string>>(new Set())
 
   const pendingForkRef = useRef(pendingFork)
@@ -306,6 +325,8 @@ function App() {
   const subtaskScrollRef = useRef<HTMLDivElement>(null)
   const selectedSessionIdRef = useRef(selectedSessionId)
   selectedSessionIdRef.current = selectedSessionId
+  const sseSyncTimerRef = useRef<number | null>(null)
+  const sseSyncDirsRef = useRef<Set<string>>(new Set())
 
   const pendingQuestionsRef = useRef(pendingQuestions)
   pendingQuestionsRef.current = pendingQuestions
@@ -441,13 +462,26 @@ function App() {
   useEffect(() => {
     setWaitingForAssistantReply(false)
     setLatestTurnTrace(null)
-    setTraceCopyState('idle')
   }, [selectedSessionId])
 
   useEffect(() => {
     if (!selectedSessionId) return
+    const activeSession = sessions.find((s) => s.id === selectedSessionId)
+    if (shouldSkipTraceIngestForSession(selectedSessionId, activeSession)) {
+      debugLog('[VibeTrace][trace] skip ingest for memory-worker internal session', {
+        sessionID: selectedSessionId,
+        title: activeSession?.title,
+      })
+      return
+    }
     const stopMessage = findLatestAssistantStopMessage(messages)
     if (!stopMessage) return
+    try {
+      const persisted = window.localStorage.getItem(lastTraceStopStorageKey(selectedSessionId))
+      if (persisted && persisted === stopMessage.info.id) return
+    } catch {
+      /* ignore localStorage errors */
+    }
 
     const traceKey = `${selectedSessionId}:${stopMessage.info.id}`
     if (processedTraceTurnKeysRef.current.has(traceKey)) return
@@ -455,13 +489,19 @@ function App() {
     const sid = selectedSessionId
     const endAssistantMessageId = stopMessage.info.id
     const timer = window.setTimeout(() => {
+      /**
+       * 同一 traceKey 可能被安排多个 timeout（例如依赖在短时间内连续触发、或极端情况下 cleanup
+       * 未取消到前一个 timer）。effect 入口虽检查过 ref，但 fire 时须再次互斥，否则会两次 ingest、
+       * memory_worker 会跑两轮完整 analyzer（runId 仅 uuid 后缀不同）。
+       */
+      if (processedTraceTurnKeysRef.current.has(traceKey)) return
       processedTraceTurnKeysRef.current.add(traceKey)
       void (async () => {
         const session = sessionsRef.current.find((s) => s.id === sid)
         const dir = session?.directory
         try {
           const freshMessages = await getMessages(sid, 'trace extraction after finish:stop', dir)
-          console.log('[VibeTrace][getMessages output]', {
+          debugLog('[VibeTrace][getMessages output]', {
             sessionID: sid,
             reason: 'trace extraction after finish:stop',
             messages: freshMessages,
@@ -481,8 +521,24 @@ function App() {
             return
           }
           setLatestTurnTrace(trace)
-          setTraceCopyState('idle')
-          console.log('[VibeTrace][turn trace]', trace)
+          debugLog('[VibeTrace][turn trace]', trace)
+          try {
+            window.localStorage.setItem(lastTraceStopStorageKey(sid), endAssistantMessageId)
+          } catch {
+            /* ignore localStorage errors */
+          }
+          void (async () => {
+            try {
+              const ingestResult = await ingestTraceToMemoryWorker(trace, {
+                directory: trace.session?.directory || session?.directory,
+                parentSessionID: sid,
+              })
+              registerMemoryWorkerInternalSessionIds(collectInternalSessionIdsFromIngest(ingestResult))
+              debugLog('[VibeTrace][memory-worker ingest ok]', ingestResult)
+            } catch (ingestErr) {
+              console.warn('[VibeTrace][memory-worker ingest failed]', ingestErr)
+            }
+          })()
         } catch (e) {
           processedTraceTurnKeysRef.current.delete(traceKey)
           console.warn('[VibeTrace][trace] failed to refresh messages/build trace', e)
@@ -491,7 +547,7 @@ function App() {
     }, TRACE_EXTRACTION_DEBOUNCE_MS)
 
     return () => window.clearTimeout(timer)
-  }, [messages, selectedSessionId])
+  }, [messages, selectedSessionId, sessions])
 
   useEffect(() => {
     window.__vibetraceDebug = {
@@ -500,7 +556,7 @@ function App() {
         const sid = selectedSessionIdRef.current
         const dir = sessionsRef.current.find((s) => s.id === sid)?.directory
         const msgs = await getMessages(sid, 'window.__vibetraceDebug.getMessages()', dir)
-        console.log('[VibeTrace][manual getMessages output]', msgs)
+        debugLog('[VibeTrace][manual getMessages output]', msgs)
         return msgs
       },
       latestTrace: () => latestTurnTrace,
@@ -516,7 +572,8 @@ function App() {
       const payload = event?.payload || event
       const eventType = payload?.type
       if (!eventType) return
-      console.log('[VibeTrace][SSE event]', eventType, event)
+      const isNoisyDelta = eventType === 'message.part.delta'
+      if (!isNoisyDelta) debugLog('[VibeTrace][SSE event]', eventType, event)
 
       if (eventType === 'question.asked') {
         const props = payload.properties as Partial<OcPendingQuestionRequest> | undefined
@@ -559,16 +616,29 @@ function App() {
         }
       }
 
+      if (eventType === 'message.part.delta') {
+        // Very high-frequency token stream event; avoid fan-out REST refresh storms.
+        return
+      }
+
       if (eventType.startsWith('message') || eventType.startsWith('session')) {
         const root = event as { directory?: string }
         const eventDir = typeof root.directory === 'string' ? root.directory : undefined
-        refreshSessions(eventDir ? [eventDir] : undefined)
-          .then(setSessions)
-          .catch(() => {})
-        const dir = sessionsRef.current.find(s => s.id === selectedSessionId)?.directory
-        if (selectedSessionId) {
-          getMessages(selectedSessionId, `SSE:${eventType}`, dir).then(setMessages).catch(() => {})
-        }
+        if (eventDir) sseSyncDirsRef.current.add(eventDir)
+        if (sseSyncTimerRef.current !== null) return
+        sseSyncTimerRef.current = window.setTimeout(() => {
+          sseSyncTimerRef.current = null
+          const dirs = [...sseSyncDirsRef.current]
+          sseSyncDirsRef.current.clear()
+          refreshSessions(dirs.length > 0 ? dirs : undefined)
+            .then(setSessions)
+            .catch(() => {})
+          const sid = selectedSessionIdRef.current
+          const dir = sessionsRef.current.find((s) => s.id === sid)?.directory
+          if (sid) {
+            getMessages(sid, `SSE:${eventType}`, dir).then(setMessages).catch(() => {})
+          }
+        }, SSE_SYNC_DEBOUNCE_MS)
       }
 
       if (eventType.startsWith('todo')) {
@@ -1257,20 +1327,6 @@ function App() {
     setAnalysisAction(action)
   }, [])
 
-  const handleCopyLatestTrace = useCallback(async () => {
-    if (!latestTurnTrace) return
-    const text = JSON.stringify(latestTurnTrace, null, 2)
-    try {
-      await navigator.clipboard.writeText(text)
-      setTraceCopyState('copied')
-      window.setTimeout(() => setTraceCopyState('idle'), 1600)
-    } catch {
-      console.log('[VibeTrace][turn trace copy fallback]', text)
-      setTraceCopyState('failed')
-      window.setTimeout(() => setTraceCopyState('idle'), 2400)
-    }
-  }, [latestTurnTrace])
-
   return (
     <div
       style={{
@@ -1497,39 +1553,6 @@ function App() {
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <button
-                type="button"
-                onClick={handleCopyLatestTrace}
-                disabled={!latestTurnTrace}
-                title={
-                  latestTurnTrace
-                    ? 'Copy latest generated turn trace JSON'
-                    : 'Trace will appear after an assistant message finishes with finish: stop'
-                }
-                style={{
-                  height: 26,
-                  border: '1px solid #DBDBDB',
-                  background: latestTurnTrace ? '#FFFFFF' : '#F8F8F8',
-                  cursor: latestTurnTrace ? 'pointer' : 'not-allowed',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  borderRadius: 6,
-                  color: latestTurnTrace ? '#5C5C5C' : '#C6C6C6',
-                  padding: '0 8px',
-                  fontSize: 11,
-                  lineHeight: '14px',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {traceCopyState === 'copied'
-                  ? 'trace copied'
-                  : traceCopyState === 'failed'
-                    ? 'see console'
-                    : latestTurnTrace
-                      ? 'copy trace'
-                      : 'trace pending'}
-              </button>
               <button
                 type="button"
                 onClick={() => setSubtaskFullscreenOpen(true)}

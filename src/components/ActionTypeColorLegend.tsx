@@ -28,6 +28,7 @@ export default function ActionTypeColorLegend({ paletteId }: Props) {
     'Clarify',
     'Permission',
     'Read',
+    'SkillRouter',
     'Search',
     'Shell',
     'Write',
@@ -40,7 +41,7 @@ export default function ActionTypeColorLegend({ paletteId }: Props) {
     const c = getActionTypeTriad(paletteId, type)
     return {
       key: type,
-      label: type === 'UserRequest' ? 'user request' : type,
+      label: type === 'UserRequest' ? 'user request' : type === 'SkillRouter' ? 'skill router' : type,
       fill: c.fill,
       stroke: c.stroke,
       icon: buildIconMarkup(type),

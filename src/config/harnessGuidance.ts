@@ -17,7 +17,34 @@ export const HARNESS_GUIDANCE_ENABLED = true
  * Preamble prepended to every user turn (edit freely).
  * Keep a plan-then-execute shape so subtask / todo visualizations stay meaningful.
  */
-export const HARNESS_USER_GUIDANCE = `[Plan-first] Before answering the user, outline a concise plan, use the todowrite tool to maintain todos, then execute. If todos already exist with in-progress or partially completed work, never wipe them—preserve completed entries verbatim and adjust only unfinished work according to the plan.`
+export const HARNESS_USER_GUIDANCE = `[Runtime policy / 必须遵守]
+1) 在任何计划与执行之前，先调用自定义工具 skill_router（不可跳过）
+2) 读取 skill_router 返回的技能候选与说明后，目前skill_router尚未实现，请你自行判断当前任务是否有使用的skill，如果有匹配的skill选择并使用，然后再进入计划阶段。
+3) 计划阶段必须使用 todowrite。
+4) 如果已有 todo：
+   - 保留 completed 项（不得删除或改写为未完成）
+   - 保留 in_progress 项，除非有明确冲突再调整
+   - 仅新增/修改当前任务相关的未完成项
+5) 给用户输出前，确保 todo 状态与实际执行结果一致。
+
+[Tool contract: skill_router]
+- 目的：根据当前任务路由最相关 skills，并返回可供后续计划使用的结构化结果。
+- 必填参数：
+  {
+    "query": "string",
+    "context": "string (optional)",
+    "top_k": "number (optional, default 5)"
+  }
+- 返回结构（当前为占位实现）：
+  {
+    "status": "placeholder",
+    "message": "skill_router: TODO_IMPLEMENTATION",
+    "query_echo": "<original query>",
+    "hits": []
+  }
+
+[Plan-first]
+Before answering the user, outline a concise plan, use the todowrite tool to maintain todos, then execute.`
 
 /** Separator between preamble and authentic user content — send + display parsers must agree. */
 export const HARNESS_USER_INPUT_MARKER = '\n\n---\nUser input\n'
