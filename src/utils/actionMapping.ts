@@ -623,8 +623,16 @@ function windowsOverlap(
 
 export type ParallelCallInfo = { parallelGroupId: string; parallelLaneIndex: number }
 
+/** 并行分桶：同消息内的 subagent/task 不按 call_id stem 分组（每次 launch 都是新 call_id） */
+function parallelCompareBucketKey(messageId: string, stem: string, isSubagentTool: boolean): string {
+  if (isSubagentTool) return `${messageId}:::__subagent_task__`
+  return `${messageId}:::${stem}`
+}
+
 /**
- * 同一 assistant 消息内：call_id 同 stem、且 wall-clock 区间重叠 → 判为并行（含多工具并行）。
+ * 同一 assistant 消息内、wall-clock 重叠 → 判为并行：
+ * - 普通工具：call_id stem 相同（如 `read_1` / `read_2`）
+ * - task/subagent：同一条消息里多次 launch、区间重叠即并行（call_id 彼此独立）
  * 返回 callID → 组 id + lane（按 start 升序 0..n-1）。
  */
 export function detectParallelCallMapping(messages: OcMessage[], nowMs: number): Map<string, ParallelCallInfo> {
@@ -633,6 +641,7 @@ export function detectParallelCallMapping(messages: OcMessage[], nowMs: number):
     messageId: string
     callID: string
     stem: string
+    isSubagentTool: boolean
     window: { startMs: number; endMs: number }
     startMs: number
   }
@@ -648,6 +657,7 @@ export function detectParallelCallMapping(messages: OcMessage[], nowMs: number):
         messageId: mid,
         callID: part.callID,
         stem: callIdStem(part.callID),
+        isSubagentTool: isSubagentToolName(part.tool),
         window: tw,
         startMs: tw.startMs,
       })
@@ -655,7 +665,7 @@ export function detectParallelCallMapping(messages: OcMessage[], nowMs: number):
   }
   const byKey = new Map<string, ToolMeta[]>()
   for (const t of tools) {
-    const key = `${t.messageId}:::${t.stem}`
+    const key = parallelCompareBucketKey(t.messageId, t.stem, t.isSubagentTool)
     let arr = byKey.get(key)
     if (!arr) {
       arr = []
@@ -722,28 +732,29 @@ export function applyParallelLayoutFromCalls(
 }
 
 /**
- * 并行子任务共享同一进程带（垂直 band），仅通过 parallelLaneIndex 在 SVG 内错开；
- * 非并行仍按唯一 childSessionID 递增 band。
+ * 每个子会话独占一个进程带索引（用于 `row` / 内核+工具双层）；
+ * 并行子智能体在 SVG 里各占一条泳道（`session:task:<callID>`），按 parallelLaneIndex 上下堆叠，不共用 band。
  */
 export function buildChildSessionBandMap(
   descriptors: TaskChildDescriptor[],
   parallelByCallId: Map<string, ParallelCallInfo>
 ): Map<string, number> {
+  const ordered = [...descriptors].sort((a, b) => {
+    const pa = parallelByCallId.get(a.callID)
+    const pb = parallelByCallId.get(b.callID)
+    const ga = pa?.parallelGroupId ?? ''
+    const gb = pb?.parallelGroupId ?? ''
+    if (ga !== gb) return ga.localeCompare(gb)
+    const la = pa?.parallelLaneIndex ?? 0
+    const lb = pb?.parallelLaneIndex ?? 0
+    if (la !== lb) return la - lb
+    return a.anchorSortTime - b.anchorSortTime
+  })
   const m = new Map<string, number>()
-  const groupBand = new Map<string, number>()
   let nextBand = 1
-  for (const d of descriptors) {
-    const para = parallelByCallId.get(d.callID)
-    if (para) {
-      const gid = para.parallelGroupId
-      if (!groupBand.has(gid)) {
-        groupBand.set(gid, nextBand++)
-      }
-      m.set(d.childSessionID, groupBand.get(gid)!)
-    } else {
-      if (!m.has(d.childSessionID)) {
-        m.set(d.childSessionID, nextBand++)
-      }
+  for (const d of ordered) {
+    if (!m.has(d.childSessionID)) {
+      m.set(d.childSessionID, nextBand++)
     }
   }
   return m

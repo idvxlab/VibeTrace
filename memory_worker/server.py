@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -10,13 +12,16 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LOG_ROOT = REPO_ROOT / "memory_worker" / "logs"
 PROMPT_ROOT = REPO_ROOT / "memory_worker" / "prompts"
+INGEST_DEDUP_INDEX = LOG_ROOT / "ingest-dedup-index.json"
+INGEST_DEDUP_STALE_RUNNING_SEC = 900
+_ingest_dedup_lock = threading.Lock()
 
 
 def load_env_file(path: Path) -> None:
@@ -45,6 +50,19 @@ MW_WRITER_MODE = (os.environ.get("MW_WRITER_MODE") or "opencode").strip().lower(
 MW_SESSION_STRATEGY = (os.environ.get("MW_SESSION_STRATEGY") or "new").strip().lower()
 MW_SESSION_TITLE_PREFIX = (os.environ.get("MW_SESSION_TITLE_PREFIX") or "[mw-internal]").strip()
 MW_CORS_ORIGINS = [x.strip() for x in (os.environ.get("MW_CORS_ORIGINS") or "http://localhost:5173;http://127.0.0.1:5173").split(";") if x.strip()]
+MW_ANALYZER_SESSION_ATTEMPTS = max(1, int(os.environ.get("MW_ANALYZER_SESSION_ATTEMPTS") or "5"))
+INGEST_DEDUP_FAILED_COOLDOWN_SEC = max(60, int(os.environ.get("INGEST_DEDUP_FAILED_COOLDOWN_SEC") or "600"))
+
+# OpenCode HTTP 超时（代码内常量，不走 env）
+MW_OPENCODE_HTTP_TIMEOUT_SEC = 60
+MW_OPENCODE_MESSAGE_TIMEOUT_SEC = 180
+MW_ANALYZER_WAIT_PER_ATTEMPT_SEC = 180
+
+ANALYZER_IN_SESSION_RETRY_PROMPT = (
+    "The previous reply did not complete within the time limit. Continue in this same session: "
+    "finish the skill analysis and output the full JSON envelope only (skill_suggestions array), "
+    "with no extra prose before or after the JSON."
+)
 
 
 def parse_worker_port() -> int:
@@ -116,20 +134,265 @@ def ensure_prompt_files() -> None:
 def normalize_trace_payload(payload: Any) -> dict[str, Any] | None:
     if not isinstance(payload, dict):
         return None
-    if payload.get("schemaVersion") == "trace.v1":
+    schema = payload.get("schemaVersion")
+    if schema in ("trace.v1", "trace.session.v1"):
         return payload
     trace = payload.get("trace")
-    if isinstance(trace, dict) and trace.get("schemaVersion") == "trace.v1":
+    if isinstance(trace, dict) and trace.get("schemaVersion") in ("trace.v1", "trace.session.v1"):
         return trace
     return None
 
 
+def trace_primary_turn(trace: dict[str, Any]) -> dict[str, Any]:
+    """Triggering turn: `current_turn`, legacy `turns[0]`, or trace.v1 root."""
+    if trace.get("schemaVersion") == "trace.session.v1":
+        current = trace.get("current_turn")
+        if isinstance(current, dict):
+            return current
+        turns = trace.get("turns")
+        if isinstance(turns, list) and turns and isinstance(turns[0], dict):
+            return turns[0]
+        return {}
+    if trace.get("schemaVersion") == "trace.v1":
+        return trace
+    return {}
+
+
+def trace_chronological_turns(trace: dict[str, Any]) -> list[dict[str, Any]]:
+    """Session bundle turns oldest → newest; single trace.v1 as one-element list."""
+    if trace.get("schemaVersion") == "trace.session.v1":
+        history = trace.get("history")
+        current = trace.get("current_turn")
+        out: list[dict[str, Any]] = []
+        if isinstance(history, list):
+            out.extend([x for x in history if isinstance(x, dict)])
+        if isinstance(current, dict):
+            out.append(current)
+        if out:
+            return out
+        turns = trace.get("turns")
+        if isinstance(turns, list):
+            legacy = [x for x in turns if isinstance(x, dict)]
+            return list(reversed(legacy))
+        return []
+    if trace.get("schemaVersion") == "trace.v1":
+        return [trace]
+    return []
+
+
+def trace_primary_end_message_id(trace: dict[str, Any]) -> str:
+    ingest = trace.get("ingest") if trace.get("schemaVersion") == "trace.session.v1" else {}
+    if isinstance(ingest, dict):
+        primary = str(ingest.get("primaryEndAssistantMessageId") or "").strip()
+        if primary:
+            return primary
+    primary_turn = trace_primary_turn(trace)
+    return str(((primary_turn.get("turn") or {}).get("endAssistantMessageId") or "")).strip()
+
+
+def trace_session_id(trace: dict[str, Any]) -> str:
+    primary_turn = trace_primary_turn(trace)
+    sid = str(((primary_turn.get("session") or trace.get("session") or {}).get("id") or "")).strip()
+    return sid
+
+
 def build_run_id(trace: dict[str, Any]) -> str:
-    sid = str(((trace.get("session") or {}).get("id") or "unknown-session"))
-    end_msg = str(((trace.get("turn") or {}).get("endAssistantMessageId") or "unknown-turn"))
+    sid = trace_session_id(trace) or "unknown-session"
+    end_msg = trace_primary_end_message_id(trace) or "unknown-turn"
     safe = lambda s: re.sub(r"[^a-zA-Z0-9_-]", "_", s)
     stamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S-%f")
     return f"{stamp}-{safe(sid)}-{safe(end_msg)}-{uuid4().hex[:8]}"
+
+
+def trace_ingest_dedup_key(trace: dict[str, Any]) -> str:
+    sid = trace_session_id(trace)
+    end_msg = trace_primary_end_message_id(trace)
+    if not sid or not end_msg:
+        return ""
+    return f"{sid}:{end_msg}"
+
+
+def _load_ingest_dedup_index() -> dict[str, Any]:
+    if not INGEST_DEDUP_INDEX.exists():
+        return {}
+    try:
+        data = json.loads(INGEST_DEDUP_INDEX.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_ingest_dedup_index(data: dict[str, Any]) -> None:
+    INGEST_DEDUP_INDEX.parent.mkdir(parents=True, exist_ok=True)
+    INGEST_DEDUP_INDEX.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _parse_iso_utc(ts: str) -> datetime | None:
+    if not ts:
+        return None
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _ingest_entry_age_sec(entry: dict[str, Any], field: str) -> float | None:
+    dt = _parse_iso_utc(str(entry.get(field) or ""))
+    if dt is None:
+        return None
+    return (datetime.now(timezone.utc) - dt).total_seconds()
+
+
+def _ingest_entry_is_stale_running(entry: dict[str, Any]) -> bool:
+    if str(entry.get("status") or "") != "running":
+        return False
+    age = _ingest_entry_age_sec(entry, "startedAt")
+    if age is None:
+        return True
+    return age > INGEST_DEDUP_STALE_RUNNING_SEC
+
+
+def _ingest_entry_failed_blocks_reingest(entry: dict[str, Any]) -> bool:
+    if str(entry.get("status") or "") != "failed":
+        return False
+    age = _ingest_entry_age_sec(entry, "finishedAt")
+    if age is None:
+        return True
+    return age <= INGEST_DEDUP_FAILED_COOLDOWN_SEC
+
+
+def _pipeline_result_from_run_dir(run_dir: Path, *, duplicate: bool = False, dedup_key: str = "") -> dict[str, Any]:
+    summary: dict[str, Any] = {}
+    summary_path = run_dir / "00-summary.json"
+    if summary_path.exists():
+        try:
+            loaded = json.loads(summary_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                summary = loaded
+        except Exception:
+            pass
+    analyzer_output: dict[str, Any] = {}
+    analysis: dict[str, Any] | None = None
+    analyzer_path = run_dir / "04-analyzer-raw.json"
+    if analyzer_path.exists():
+        try:
+            loaded = json.loads(analyzer_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                analyzer_output = loaded
+                parsed = loaded.get("analysis")
+                analysis = parsed if isinstance(parsed, dict) else None
+        except Exception:
+            pass
+    writer_results: list[dict[str, Any]] = []
+    writer_path = run_dir / "07-writer-result.json"
+    if writer_path.exists():
+        try:
+            loaded = json.loads(writer_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict) and isinstance(loaded.get("results"), list):
+                writer_results = [x for x in loaded["results"] if isinstance(x, dict)]
+        except Exception:
+            pass
+    out: dict[str, Any] = {
+        "ok": True,
+        "runId": str(summary.get("runId") or run_dir.name),
+        "runDir": str(run_dir),
+        "tracePath": str(run_dir / "01-trace.json"),
+        "poolSummaryPath": str(run_dir / "02-pool-summary.json"),
+        "suggestionsPath": str(run_dir / "05-skill-suggestions.json"),
+        "writerResultPath": str(run_dir / "07-writer-result.json"),
+        "analyzerOutput": analyzer_output,
+        "analysis": analysis,
+        "writerResults": writer_results,
+        "analyzerSessionID": str(summary.get("analyzerSessionID") or ""),
+        "writerSessionID": str(summary.get("writerSessionID") or ""),
+    }
+    if duplicate:
+        out["duplicate"] = True
+        out["dedupKey"] = dedup_key
+    return out
+
+
+def run_pipeline_with_dedup(
+    trace: dict[str, Any],
+    directory_override: str | None = None,
+    parent_session_id: str | None = None,
+) -> dict[str, Any]:
+    dedup_key = trace_ingest_dedup_key(trace)
+    if not dedup_key:
+        return run_pipeline(trace, directory_override=directory_override, parent_session_id=parent_session_id)
+
+    with _ingest_dedup_lock:
+        index = _load_ingest_dedup_index()
+        entry = index.get(dedup_key)
+        if isinstance(entry, dict):
+            status = str(entry.get("status") or "")
+            run_dir_raw = str(entry.get("runDir") or "").strip()
+            if status == "done" and run_dir_raw:
+                run_dir = Path(run_dir_raw)
+                if run_dir.is_dir():
+                    print(f"[memory-worker] ingest.dedup.hit done dedupKey={dedup_key} runId={entry.get('runId')}")
+                    return _pipeline_result_from_run_dir(run_dir, duplicate=True, dedup_key=dedup_key)
+            if status == "running" and not _ingest_entry_is_stale_running(entry):
+                print(f"[memory-worker] ingest.dedup.hit running dedupKey={dedup_key} runId={entry.get('runId')}")
+                return {
+                    "ok": True,
+                    "duplicate": True,
+                    "dedupKey": dedup_key,
+                    "runId": entry.get("runId"),
+                    "runDir": entry.get("runDir"),
+                    "message": "ingest already in progress for this assistant stop message",
+                }
+            if status == "failed" and _ingest_entry_failed_blocks_reingest(entry):
+                run_dir_raw = str(entry.get("runDir") or "").strip()
+                print(f"[memory-worker] ingest.dedup.hit failed dedupKey={dedup_key} runId={entry.get('runId')}")
+                out: dict[str, Any] = {
+                    "ok": False,
+                    "duplicate": True,
+                    "dedupKey": dedup_key,
+                    "runId": entry.get("runId"),
+                    "runDir": entry.get("runDir"),
+                    "error": entry.get("error") or "previous ingest failed for this assistant stop",
+                    "message": "recent failed ingest for this assistant stop message",
+                }
+                if run_dir_raw and Path(run_dir_raw).is_dir():
+                    out["runDir"] = run_dir_raw
+                return out
+        index[dedup_key] = {"status": "running", "startedAt": now_iso(), "runId": None, "runDir": None}
+        _save_ingest_dedup_index(index)
+
+    try:
+        result = run_pipeline(trace, directory_override=directory_override, parent_session_id=parent_session_id)
+    except Exception:
+        with _ingest_dedup_lock:
+            index = _load_ingest_dedup_index()
+            current = index.get(dedup_key)
+            if isinstance(current, dict) and str(current.get("status") or "") == "running":
+                index.pop(dedup_key, None)
+                _save_ingest_dedup_index(index)
+        raise
+
+    with _ingest_dedup_lock:
+        index = _load_ingest_dedup_index()
+        if result.get("ok"):
+            index[dedup_key] = {
+                "status": "done",
+                "finishedAt": now_iso(),
+                "runId": result.get("runId"),
+                "runDir": result.get("runDir"),
+            }
+        else:
+            index[dedup_key] = {
+                "status": "failed",
+                "finishedAt": now_iso(),
+                "runId": result.get("runId"),
+                "runDir": result.get("runDir"),
+                "error": result.get("error"),
+            }
+        _save_ingest_dedup_index(index)
+    return result
 
 
 def extract_skill_fields(skill_md: str, default_name: str) -> tuple[str, str]:
@@ -190,20 +453,59 @@ def build_pool_summary(project_dir: Path) -> dict[str, Any]:
     }
 
 
-def opencode_request(method: str, api_path: str, body: dict[str, Any] | None = None, directory: str | None = None) -> tuple[int, str]:
+def opencode_basic_auth_header() -> dict[str, str]:
+    """When `opencode serve` sets OPENCODE_SERVER_PASSWORD, every HTTP hop needs Basic auth."""
+    pwd = (os.environ.get("VITE_OPENCODE_SERVER_PASSWORD") or os.environ.get("OPENCODE_SERVER_PASSWORD") or "").strip()
+    if not pwd:
+        return {}
+    user = (
+        (os.environ.get("VITE_OPENCODE_SERVER_USERNAME") or os.environ.get("OPENCODE_SERVER_USERNAME") or "opencode").strip()
+        or "opencode"
+    )
+    token = base64.b64encode(f"{user}:{pwd}".encode("utf-8")).decode("ascii")
+    return {"Authorization": f"Basic {token}"}
+
+
+def _is_timeout_error(err: BaseException) -> bool:
+    if isinstance(err, TimeoutError):
+        return True
+    if isinstance(err, URLError) and err.reason is not None:
+        return _is_timeout_error(err.reason)  # type: ignore[arg-type]
+    msg = str(err).lower()
+    return "timed out" in msg or "timeout" in msg
+
+
+def opencode_request(
+    method: str,
+    api_path: str,
+    body: dict[str, Any] | None = None,
+    directory: str | None = None,
+    *,
+    timeout_sec: int | None = None,
+) -> tuple[int, str]:
     url = f"{OPENCODE_BASE}{api_path}"
-    headers = {"x-opencode-directory": directory or OPENCODE_DIRECTORY}
+    headers = {
+        "x-opencode-directory": directory or OPENCODE_DIRECTORY,
+        **opencode_basic_auth_header(),
+    }
     data = None
     if body is not None:
         headers["Content-Type"] = "application/json"
         data = json.dumps(body, ensure_ascii=False).encode("utf-8")
     req = Request(url, data=data, headers=headers, method=method)
+    limit = MW_OPENCODE_HTTP_TIMEOUT_SEC if timeout_sec is None else max(30, int(timeout_sec))
     try:
-        with urlopen(req, timeout=60) as resp:
+        with urlopen(req, timeout=limit) as resp:
             return resp.status, resp.read().decode("utf-8", errors="replace")
     except HTTPError as e:
         text = e.read().decode("utf-8", errors="replace")
         return e.code, text
+    except Exception as e:
+        if _is_timeout_error(e):
+            raise RuntimeError(
+                f"opencode HTTP timed out after {limit}s ({method} {api_path})"
+            ) from e
+        raise
 
 
 def opencode_update_session_title(session_id: str, title: str, directory: str | None = None) -> None:
@@ -268,9 +570,25 @@ def opencode_get_messages(session_id: str, directory: str | None = None) -> list
 
 def opencode_send_message(session_id: str, text: str, directory: str | None = None) -> None:
     body = {"parts": [{"type": "text", "text": text}]}
-    status, raw = opencode_request("POST", f"/session/{session_id}/message", body, directory=directory)
+    status, raw = opencode_request(
+        "POST",
+        f"/session/{session_id}/message",
+        body,
+        directory=directory,
+        timeout_sec=MW_OPENCODE_MESSAGE_TIMEOUT_SEC,
+    )
     if status != 200:
         raise RuntimeError(f"send message failed: {status} {raw}")
+
+
+def _assistant_message_ids(messages: list[dict[str, Any]]) -> set[str]:
+    out: set[str] = set()
+    for m in messages:
+        info = m.get("info") or {}
+        mid = info.get("id")
+        if isinstance(mid, str) and mid:
+            out.add(mid)
+    return out
 
 
 def opencode_generate_text(
@@ -280,7 +598,14 @@ def opencode_generate_text(
     phase: str,
     directory: str | None = None,
     parent_session_id: str | None = None,
+    *,
+    retry_in_session_on_timeout: bool = False,
+    max_attempts: int | None = None,
+    retry_prompt: str | None = None,
 ) -> dict[str, Any]:
+    attempts_limit = max_attempts if max_attempts is not None else (MW_ANALYZER_SESSION_ATTEMPTS if retry_in_session_on_timeout else 1)
+    continue_prompt = (retry_prompt or ANALYZER_IN_SESSION_RETRY_PROMPT).strip()
+
     append_log(log_file, f"{phase}.session.create.start", {})
     session = opencode_create_session(
         directory=directory,
@@ -289,12 +614,74 @@ def opencode_generate_text(
     )
     write_json(run_dir / f"{phase}-session.json", session)
     session_id = str(session.get("id") or "")
-    append_log(log_file, f"{phase}.session.create.ok", {"sessionID": session_id, "directory": directory or OPENCODE_DIRECTORY, "parentSessionID": parent_session_id or ""})
-    before_ids = {str((m.get("info") or {}).get("id")) for m in opencode_get_messages(session_id, directory=directory)}
-    before_ids.discard("")
-    opencode_send_message(session_id, prompt, directory=directory)
-    append_log(log_file, f"{phase}.message.send.ok", {"sessionID": session_id})
-    assistant = wait_assistant_stop_message(session_id, before_ids, directory=directory)
+    append_log(
+        log_file,
+        f"{phase}.session.create.ok",
+        {
+            "sessionID": session_id,
+            "directory": directory or OPENCODE_DIRECTORY,
+            "parentSessionID": parent_session_id or "",
+            "maxAttempts": attempts_limit,
+            "messageTimeoutSec": MW_OPENCODE_MESSAGE_TIMEOUT_SEC,
+            "waitStopTimeoutSec": MW_ANALYZER_WAIT_PER_ATTEMPT_SEC,
+        },
+    )
+
+    last_timeout: RuntimeError | None = None
+    assistant: dict[str, Any] | None = None
+
+    for attempt in range(1, attempts_limit + 1):
+        before_ids = _assistant_message_ids(opencode_get_messages(session_id, directory=directory))
+        user_text = prompt if attempt == 1 else continue_prompt
+        append_log(
+            log_file,
+            f"{phase}.attempt.start",
+            {"attempt": attempt, "maxAttempts": attempts_limit, "isRetry": attempt > 1},
+        )
+        try:
+            opencode_send_message(session_id, user_text, directory=directory)
+        except RuntimeError as e:
+            append_log(
+                log_file,
+                f"{phase}.message.send.failed",
+                {
+                    "sessionID": session_id,
+                    "attempt": attempt,
+                    "error": str(e),
+                    "messageTimeoutSec": MW_OPENCODE_MESSAGE_TIMEOUT_SEC,
+                },
+            )
+            raise RuntimeError(
+                f"{phase} message send failed (HTTP wait up to {MW_OPENCODE_MESSAGE_TIMEOUT_SEC}s): {e}"
+            ) from e
+        append_log(log_file, f"{phase}.message.send.ok", {"sessionID": session_id, "attempt": attempt})
+        try:
+            assistant = wait_assistant_stop_message(session_id, before_ids, directory=directory)
+            append_log(log_file, f"{phase}.wait.stop.ok", {"sessionID": session_id, "attempt": attempt})
+            break
+        except RuntimeError as e:
+            if "timeout" not in str(e).lower():
+                raise
+            last_timeout = e
+            append_log(
+                log_file,
+                f"{phase}.wait.timeout",
+                {
+                    "sessionID": session_id,
+                    "attempt": attempt,
+                    "waitStopTimeoutSec": MW_ANALYZER_WAIT_PER_ATTEMPT_SEC,
+                    "willRetryInSession": retry_in_session_on_timeout and attempt < attempts_limit,
+                },
+            )
+            if not retry_in_session_on_timeout or attempt >= attempts_limit:
+                raise RuntimeError(
+                    f"{phase} wait for assistant stop timed out after {MW_ANALYZER_WAIT_PER_ATTEMPT_SEC}s "
+                    f"({attempts_limit} attempt(s) exhausted)"
+                ) from e
+
+    if assistant is None:
+        raise last_timeout or RuntimeError("timeout waiting assistant stop message")
+
     write_json(run_dir / f"{phase}-assistant-message.json", assistant)
     raw_text = extract_assistant_text(assistant)
     (run_dir / f"{phase}-assistant-text.txt").write_text(raw_text, encoding="utf-8")
@@ -354,8 +741,36 @@ def try_parse_json_value(raw_text: str) -> Any | None:
     return None
 
 
-def wait_assistant_stop_message(session_id: str, before_ids: set[str], timeout_sec: int = 120, directory: str | None = None) -> dict[str, Any]:
-    deadline = time.time() + timeout_sec
+def is_assistant_stop_message(message: dict[str, Any]) -> bool:
+    """Align with cockpit-ui `isAssistantStopMessage` (info.finish or step-finish reason=stop)."""
+    info = message.get("info") or {}
+    if info.get("role") != "assistant":
+        return False
+    if info.get("finish") == "stop":
+        return True
+    nested = message.get("message")
+    if isinstance(nested, dict) and nested.get("finish") == "stop":
+        return True
+    parts = message.get("parts")
+    if isinstance(parts, list):
+        for part in parts:
+            if (
+                isinstance(part, dict)
+                and part.get("type") == "step-finish"
+                and part.get("reason") == "stop"
+            ):
+                return True
+    return False
+
+
+def wait_assistant_stop_message(
+    session_id: str,
+    before_ids: set[str],
+    timeout_sec: int | None = None,
+    directory: str | None = None,
+) -> dict[str, Any]:
+    limit = MW_ANALYZER_WAIT_PER_ATTEMPT_SEC if timeout_sec is None else max(30, int(timeout_sec))
+    deadline = time.time() + limit
     while time.time() < deadline:
         messages = opencode_get_messages(session_id, directory=directory)
         fresh = []
@@ -364,7 +779,7 @@ def wait_assistant_stop_message(session_id: str, before_ids: set[str], timeout_s
             mid = info.get("id")
             if not isinstance(mid, str) or mid in before_ids:
                 continue
-            if info.get("role") == "assistant" and info.get("finish") == "stop":
+            if is_assistant_stop_message(m):
                 fresh.append(m)
         if fresh:
             fresh.sort(key=lambda x: ((x.get("info") or {}).get("time") or {}).get("created") or 0)
@@ -374,8 +789,9 @@ def wait_assistant_stop_message(session_id: str, before_ids: set[str], timeout_s
 
 
 def build_mock_envelope(trace: dict[str, Any], pool_summary: dict[str, Any]) -> dict[str, Any]:
-    run_id = str(((trace.get("turn") or {}).get("endAssistantMessageId") or "run-mock"))
-    turn = trace.get("turn") or {}
+    primary = trace_primary_turn(trace)
+    run_id = str(((primary.get("turn") or {}).get("endAssistantMessageId") or "run-mock"))
+    turn = primary.get("turn") or {}
     user_input = str(turn.get("userInput") or "")
     skills = pool_summary.get("skills") or []
     if skills:
@@ -712,6 +1128,8 @@ def run_analyzer(
         "03a-analyzer",
         directory=directory,
         parent_session_id=parent_session_id,
+        retry_in_session_on_timeout=True,
+        max_attempts=MW_ANALYZER_SESSION_ATTEMPTS,
     )
     raw_text = llm_out["rawText"]
     parsed_any = try_parse_json_value(raw_text)
@@ -732,7 +1150,10 @@ def run_pipeline(trace: dict[str, Any], directory_override: str | None = None, p
     write_json(run_dir / "01-trace.json", trace)
     append_log(log_file, "trace.saved", {"tracePath": str(run_dir / "01-trace.json")})
 
-    trace_dir = str(((trace.get("session") or {}).get("directory") or "")).strip()
+    primary_turn = trace_primary_turn(trace)
+    trace_dir = str(
+        ((primary_turn.get("session") or trace.get("session") or {}).get("directory") or "")
+    ).strip()
     effective_directory = directory_override or trace_dir or OPENCODE_DIRECTORY
     pool_summary = build_pool_summary(Path(effective_directory))
     write_json(run_dir / "02-pool-summary.json", pool_summary)
@@ -748,12 +1169,30 @@ def run_pipeline(trace: dict[str, Any], directory_override: str | None = None, p
             parent_session_id=parent_session_id,
         )
     except Exception as e:
-        append_log(log_file, "analyzer.failed", {"error": str(e)})
+        err = str(e)
+        stage = "unknown"
+        if "message send failed" in err or "POST /session/" in err:
+            stage = "analyzer_send"
+        elif "wait for assistant stop" in err:
+            stage = "analyzer_wait_stop"
+        elif _is_timeout_error(e):
+            stage = "analyzer_timeout"
+        append_log(
+            log_file,
+            "analyzer.failed",
+            {
+                "error": err,
+                "stage": stage,
+                "messageTimeoutSec": MW_OPENCODE_MESSAGE_TIMEOUT_SEC,
+                "waitStopTimeoutSec": MW_ANALYZER_WAIT_PER_ATTEMPT_SEC,
+                "maxAttempts": MW_ANALYZER_SESSION_ATTEMPTS,
+            },
+        )
         return {
             "ok": False,
             "runId": run_id,
             "runDir": str(run_dir),
-            "error": f"analyzer failed: {e}",
+            "error": f"analyzer failed ({stage}): {e}",
         }
     write_json(run_dir / "04-analyzer-raw.json", analyzer_output)
     analysis = analyzer_output.get("analysis")
@@ -929,12 +1368,18 @@ class AppHandler(BaseHTTPRequestHandler):
             body = self._read_json()
             trace = normalize_trace_payload(body)
             if not trace:
-                self._send_json(400, {"ok": False, "error": "Invalid payload, expected trace.v1 or {trace: trace.v1}"})
+                self._send_json(
+                    400,
+                    {
+                        "ok": False,
+                        "error": "Invalid payload, expected trace.v1, trace.session.v1, or {trace: ...}",
+                    },
+                )
                 return
             directory_override = str(body.get("directory") or "").strip() if isinstance(body, dict) else ""
             parent_session_id = str(body.get("parentSessionID") or "").strip() if isinstance(body, dict) else ""
             try:
-                result = run_pipeline(
+                result = run_pipeline_with_dedup(
                     trace,
                     directory_override=directory_override or None,
                     parent_session_id=parent_session_id or None,
@@ -978,8 +1423,14 @@ def main() -> None:
     print(f"[memory-worker] OPENCODE_DIRECTORY={cfg.opencode_directory}")
     print(f"[memory-worker] SKILL_WRITE_ROOT={cfg.skill_write_root}")
     print(f"[memory-worker] MW_ANALYZER_MODE={cfg.analyzer_mode}")
+    print(f"[memory-worker] MW_OPENCODE_HTTP_TIMEOUT_SEC={MW_OPENCODE_HTTP_TIMEOUT_SEC}")
+    print(f"[memory-worker] MW_OPENCODE_MESSAGE_TIMEOUT_SEC={MW_OPENCODE_MESSAGE_TIMEOUT_SEC}")
+    print(f"[memory-worker] MW_ANALYZER_WAIT_PER_ATTEMPT_SEC={MW_ANALYZER_WAIT_PER_ATTEMPT_SEC}")
+    print(f"[memory-worker] MW_ANALYZER_SESSION_ATTEMPTS={MW_ANALYZER_SESSION_ATTEMPTS}")
     print(f"[memory-worker] MW_WRITER_MODE={cfg.writer_mode}")
     print(f"[memory-worker] MW_SESSION_STRATEGY={cfg.session_strategy}")
+    auth_on = bool(opencode_basic_auth_header())
+    print(f"[memory-worker] OPENCODE_AUTH={'basic' if auth_on else 'none'}")
     server = ThreadingHTTPServer(("127.0.0.1", cfg.port), AppHandler)
     server.serve_forever()
 

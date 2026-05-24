@@ -55,7 +55,23 @@ import {
   type ForkFromActionContext,
   type ForkPanelSnapshotBundle,
 } from './utils/forkPanelSnapshot'
-import { buildTurnTrace, findLatestAssistantStopMessage } from './utils/traceExtraction'
+import {
+  buildSessionTraceAsync,
+  findLatestAssistantStopMessage,
+  getAssistantStopCompletedMs,
+  isAssistantStopWithinIngestWindow,
+  TRACE_INGEST_FRESH_WINDOW_MS,
+} from './utils/traceExtraction'
+import {
+  attachForkPayloadToSessionTrace,
+  resolveForkIngestMeta,
+} from './utils/traceForkIngest'
+import { primaryTurnFromIngestTrace } from './types/trace'
+import {
+  hasTraceIngestClaim,
+  releaseTraceIngestClaim,
+  tryClaimTraceIngest,
+} from './utils/traceIngestClaim'
 import { ingestTraceToMemoryWorker } from './services/memoryWorkerApi'
 import {
   collectInternalSessionIdsFromIngest,
@@ -89,10 +105,6 @@ const POLL_ASSISTANT_MAX_ROUNDS = 90
 function debugLog(...args: unknown[]): void {
   if (!DEBUG_VERBOSE_LOGS) return
   console.log(...args)
-}
-
-function lastTraceStopStorageKey(sessionId: string): string {
-  return `vibetrace:last-trace-stop:${sessionId}`
 }
 
 function loadComposerModelRefFromLs(): string {
@@ -250,7 +262,10 @@ function App() {
   /** User message sent; still polling for assistant completion */
   const [waitingForAssistantReply, setWaitingForAssistantReply] = useState(false)
   const [latestTurnTrace, setLatestTurnTrace] = useState<TurnTrace | null>(null)
+  /** Ingest completed successfully for this sessionId:stopId */
   const processedTraceTurnKeysRef = useRef<Set<string>>(new Set())
+  /** Debounced ingest callback has started (do not release claim on effect cleanup) */
+  const traceIngestDebounceStartedRef = useRef<Set<string>>(new Set())
 
   const pendingForkRef = useRef(pendingFork)
   pendingForkRef.current = pendingFork
@@ -465,7 +480,7 @@ function App() {
   }, [selectedSessionId])
 
   useEffect(() => {
-    if (!selectedSessionId) return
+    if (!selectedSessionId || loading) return
     const activeSession = sessions.find((s) => s.id === selectedSessionId)
     if (shouldSkipTraceIngestForSession(selectedSessionId, activeSession)) {
       debugLog('[VibeTrace][trace] skip ingest for memory-worker internal session', {
@@ -476,26 +491,42 @@ function App() {
     }
     const stopMessage = findLatestAssistantStopMessage(messages)
     if (!stopMessage) return
-    try {
-      const persisted = window.localStorage.getItem(lastTraceStopStorageKey(selectedSessionId))
-      if (persisted && persisted === stopMessage.info.id) return
-    } catch {
-      /* ignore localStorage errors */
+
+    const stopId = stopMessage.info.id
+    // stop 已出现 → 结束时间在 2 分钟内 且 未 claim → 才 ingest（见下方顺序）
+    if (!isAssistantStopWithinIngestWindow(stopMessage)) {
+      const completedMs = getAssistantStopCompletedMs(stopMessage)
+      console.info('[VibeTrace][trace] skip ingest — stop older than fresh window', {
+        sessionID: selectedSessionId,
+        stopId,
+        completedMs,
+        ageSec: completedMs != null ? Math.round((Date.now() - completedMs) / 1000) : null,
+        windowSec: TRACE_INGEST_FRESH_WINDOW_MS / 1000,
+      })
+      return
     }
 
-    const traceKey = `${selectedSessionId}:${stopMessage.info.id}`
+    const traceKey = `${selectedSessionId}:${stopId}`
     if (processedTraceTurnKeysRef.current.has(traceKey)) return
+    if (traceIngestDebounceStartedRef.current.has(traceKey)) return
+    if (hasTraceIngestClaim(selectedSessionId, stopId)) {
+      console.info('[VibeTrace][trace] skip ingest — already processed (claim lock)', { traceKey })
+      return
+    }
+    if (!tryClaimTraceIngest(selectedSessionId, stopId)) {
+      console.info('[VibeTrace][trace] skip ingest — claim race lost', { traceKey })
+      return
+    }
+    console.info('[VibeTrace][trace] scheduling ingest — fresh stop, claimed', {
+      sessionID: selectedSessionId,
+      stopId,
+      windowSec: TRACE_INGEST_FRESH_WINDOW_MS / 1000,
+    })
 
     const sid = selectedSessionId
-    const endAssistantMessageId = stopMessage.info.id
+    const endAssistantMessageId = stopId
     const timer = window.setTimeout(() => {
-      /**
-       * 同一 traceKey 可能被安排多个 timeout（例如依赖在短时间内连续触发、或极端情况下 cleanup
-       * 未取消到前一个 timer）。effect 入口虽检查过 ref，但 fire 时须再次互斥，否则会两次 ingest、
-       * memory_worker 会跑两轮完整 analyzer（runId 仅 uuid 后缀不同）。
-       */
-      if (processedTraceTurnKeysRef.current.has(traceKey)) return
-      processedTraceTurnKeysRef.current.add(traceKey)
+      traceIngestDebounceStartedRef.current.add(traceKey)
       void (async () => {
         const session = sessionsRef.current.find((s) => s.id === sid)
         const dir = session?.directory
@@ -507,47 +538,88 @@ function App() {
             messages: freshMessages,
           })
           if (selectedSessionIdRef.current !== sid) return
-          const trace = buildTurnTrace({
+          let sessionTrace = await buildSessionTraceAsync({
             messages: freshMessages,
-            endAssistantMessageId,
+            primaryEndAssistantMessageId: endAssistantMessageId,
             session,
+            sessionDirectory: dir,
             nowMs: Date.now(),
           })
-          if (!trace) {
-            console.warn('[VibeTrace][trace] stop message found, but turn trace could not be built', {
+          if (sessionTrace) {
+            const forkMeta = resolveForkIngestMeta(sid, sessionsRef.current)
+            if (forkMeta) {
+              sessionTrace = await attachForkPayloadToSessionTrace({
+                trace: sessionTrace,
+                meta: forkMeta,
+                sessions: sessionsRef.current,
+                triggeringSessionId: sid,
+                triggeringMessages: freshMessages,
+              })
+            }
+          }
+          if (!sessionTrace) {
+            releaseTraceIngestClaim(sid, endAssistantMessageId)
+            traceIngestDebounceStartedRef.current.delete(traceKey)
+            console.warn('[VibeTrace][trace] stop message found, but session trace could not be built', {
               sessionID: sid,
               endAssistantMessageId,
             })
             return
           }
-          setLatestTurnTrace(trace)
-          debugLog('[VibeTrace][turn trace]', trace)
-          try {
-            window.localStorage.setItem(lastTraceStopStorageKey(sid), endAssistantMessageId)
-          } catch {
-            /* ignore localStorage errors */
-          }
+          const primaryTurn = primaryTurnFromIngestTrace(sessionTrace)
+          setLatestTurnTrace(primaryTurn)
+          debugLog('[VibeTrace][session trace]', sessionTrace)
+          const historyCount = sessionTrace.history.length
+          console.info('[VibeTrace][trace] posting /ingest-trace', {
+            sessionID: sid,
+            endAssistantMessageId,
+            currentTurn: sessionTrace.current_turn.turn.endAssistantMessageId,
+            historyTurnCount: historyCount,
+            forkAttached: Boolean(sessionTrace.fork),
+          })
           void (async () => {
             try {
-              const ingestResult = await ingestTraceToMemoryWorker(trace, {
-                directory: trace.session?.directory || session?.directory,
+              const ingestResult = await ingestTraceToMemoryWorker(sessionTrace, {
+                directory: sessionTrace.session?.directory || session?.directory,
                 parentSessionID: sid,
               })
-              registerMemoryWorkerInternalSessionIds(collectInternalSessionIdsFromIngest(ingestResult))
-              debugLog('[VibeTrace][memory-worker ingest ok]', ingestResult)
+              if (ingestResult.duplicate) {
+                processedTraceTurnKeysRef.current.add(traceKey)
+                console.info('[VibeTrace][memory-worker ingest duplicate skipped]', ingestResult)
+              } else if (ingestResult.ok === false) {
+                processedTraceTurnKeysRef.current.add(traceKey)
+                traceIngestDebounceStartedRef.current.delete(traceKey)
+                console.warn('[VibeTrace][memory-worker ingest failed]', ingestResult.error ?? ingestResult)
+              } else {
+                processedTraceTurnKeysRef.current.add(traceKey)
+                registerMemoryWorkerInternalSessionIds(collectInternalSessionIdsFromIngest(ingestResult))
+                console.info('[VibeTrace][memory-worker ingest ok]', {
+                  runId: ingestResult.runId,
+                  runDir: ingestResult.runDir,
+                })
+              }
             } catch (ingestErr) {
+              processedTraceTurnKeysRef.current.add(traceKey)
+              traceIngestDebounceStartedRef.current.delete(traceKey)
               console.warn('[VibeTrace][memory-worker ingest failed]', ingestErr)
             }
           })()
         } catch (e) {
-          processedTraceTurnKeysRef.current.delete(traceKey)
+          releaseTraceIngestClaim(sid, endAssistantMessageId)
+          traceIngestDebounceStartedRef.current.delete(traceKey)
           console.warn('[VibeTrace][trace] failed to refresh messages/build trace', e)
         }
       })()
     }, TRACE_EXTRACTION_DEBOUNCE_MS)
 
-    return () => window.clearTimeout(timer)
-  }, [messages, selectedSessionId, sessions])
+    return () => {
+      window.clearTimeout(timer)
+      // SSE 可能在 debounce 内再次刷新 messages；若过早标记「已处理」会导致 timer 被取消且永不 ingest
+      if (!traceIngestDebounceStartedRef.current.has(traceKey)) {
+        releaseTraceIngestClaim(sid, endAssistantMessageId)
+      }
+    }
+  }, [messages, selectedSessionId, sessions, loading])
 
   useEffect(() => {
     window.__vibetraceDebug = {

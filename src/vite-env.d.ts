@@ -1,5 +1,8 @@
 /// <reference types="vite/client" />
 
+/** Injected by `vite.config.ts` `define` */
+declare const __OPENCODE_HTTP_BASE__: string
+
 interface ImportMetaEnv {
   /** Override OpenCode HTTP base, e.g. http://127.0.0.1:61830 */
   readonly VITE_OPENCODE_BASE?: string
@@ -15,4 +18,6 @@ interface ImportMetaEnv {
   readonly VITE_MEMORY_WORKER_BASE?: string
   /** Enable noisy debug console logs when set to true */
   readonly VITE_DEBUG_VERBOSE_LOGS?: string
+  /** Max session turns in memory-worker ingest bundle (newest first); default 5 */
+  readonly VITE_TRACE_SESSION_TURN_LIMIT?: string
 }

@@ -12,11 +12,11 @@ import type {
  * 配置 `.env.local` 时任意使用 `VITE_OPENCODE_BASE` 或 `OPENCODE_BASE`（与 memory-worker 对齐），二者不一致时以 `VITE_OPENCODE_BASE` 为准。
  */
 function resolveOpencodeBase(): string {
-  const base =
-    typeof __OPENCODE_HTTP_BASE__ !== 'undefined' && __OPENCODE_HTTP_BASE__.trim()
-      ? __OPENCODE_HTTP_BASE__.trim()
-      : 'http://127.0.0.1:4096'
-  return base.replace(/\/$/, '')
+  if (typeof __OPENCODE_HTTP_BASE__ !== 'undefined') {
+    // 空字符串表示同源 + Vite 代理（plugin 模式）
+    return __OPENCODE_HTTP_BASE__.replace(/\/$/, '')
+  }
+  return 'http://127.0.0.1:4096'
 }
 
 const BASE = resolveOpencodeBase()

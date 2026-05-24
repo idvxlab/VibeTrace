@@ -34,7 +34,8 @@ const GAP = 12
  * Vertical layout (consistent with `actionMapping`):
  * - Each session uses two baseline layers: layer0 = kernel (Think / Response / Plan…), layer1 = tools, etc.;
  * - Parent-side task (Subagent): once `childSessionID` is known, its rect moves into **`session:task:`** child-session lanes (no longer drawn in the main session band);
- * - Parallel lanes on the same layer are staggered with `parallelLaneIndex`, so row count grows with parallelism;
+ * - Each sub-agent is a stacked swimlane (`session:task:<callID>`); parallel siblings share x, merge edges only at group end;
+ * - `parallelLaneIndex` only offsets actions still on `session:main` (parallel tools without a dedicated task band);
  * - Child-session bands sit below `main`, with their own layers and lanes — height is not fixed.
  */
 const BLOCK_H = 28
@@ -73,7 +74,6 @@ const BOTTOM_PAD = 6
 /** Minimum canvas height when at least two swimlanes and two blocks exist — avoids collapsing the SVG when data is sparse */
 const MIN_SVG_CONTENT_HEIGHT = TOP_PAD + 2 * ROW_H + 2 * BLOCK_H + BOTTOM_PAD
 /** Clamp visible viewport to ~4 lanes including vertical padding */
-const MAX_VISIBLE_ROWS = 4
 /** Matches context-menu typography for ellipsis / SVG text labels */
 const SVG_FONT_SANS =
   "'PingFang SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif"
@@ -176,6 +176,101 @@ function actionSessionKey(a: MappedAction & { row: number }): string {
     return 'session:fork-new-branch'
   }
   return 'session:main'
+}
+
+/**
+ * Y offset inside a session band. Each sub-agent owns `session:task:<callID>` (full swimlane, stacked below siblings).
+ * `parallelLaneIndex` only staggers actions that still share `session:main` (e.g. parallel tools without a task band).
+ */
+function verticalOffsetInSession(a: MappedAction & { row: number }): number {
+  const yRow = actionLocalRowForLayout(a) * ROW_H
+  const session = actionSessionKey(a)
+  if (session.startsWith('session:task:') || session === 'session:fork-new-branch') {
+    return yRow
+  }
+  return yRow + laneOffsetY(a.parallelLaneIndex)
+}
+
+/** Task child-session region → new-branch when parent Subagent has `forkCompareRow === 2` */
+function isNewBranchTaskKey(k: string, sorted: (MappedAction & { row: number })[]): boolean {
+  if (!k.startsWith('session:task:')) return false
+  const callID = k.slice('session:task:'.length)
+  const parent = sorted.find(
+    (a) => a.actionType === 'Subagent' && a.source !== 'child-session' && a.callID === callID,
+  )
+  if (parent) return parent.forkCompareRow === 2
+  const anyAction = sorted.find((a) => actionSessionKey(a) === k)
+  return anyAction?.forkCompareRow === 2
+}
+
+/** Sync x within a parallel group: shared left edge per step (non-duration) or per start time (duration). */
+function syncParallelGroupHorizontalPositions(
+  sorted: (MappedAction & { row: number })[],
+  actionXBySortedIndex: Map<number, number>,
+  childLocalXByIndex: Map<number, number>,
+  durationMode: boolean,
+): void {
+  const indicesByGroup = new Map<string, number[]>()
+  for (let i = 0; i < sorted.length; i++) {
+    const a = sorted[i]!
+    if (!a.parallelGroupId) continue
+    let list = indicesByGroup.get(a.parallelGroupId)
+    if (!list) {
+      list = []
+      indicesByGroup.set(a.parallelGroupId, list)
+    }
+    list.push(i)
+  }
+
+  for (const indices of indicesByGroup.values()) {
+    const laneSet = new Set(indices.map((i) => sorted[i]!.parallelLaneIndex ?? 0))
+    if (laneSet.size < 2) continue
+
+    const parentIdxs = indices.filter((i) => {
+      const a = sorted[i]!
+      return a.actionType === 'Subagent' && a.source !== 'child-session' && Boolean(a.callID)
+    })
+    if (parentIdxs.length === 0) continue
+
+    const groupMinSortTime = Math.min(...indices.map((i) => sorted[i]!.sortTime))
+
+    if (!durationMode) {
+      const anchorX = Math.min(
+        ...parentIdxs.map((i) => actionXBySortedIndex.get(i) ?? MARGIN_LEFT),
+      )
+      for (const i of parentIdxs) actionXBySortedIndex.set(i, anchorX)
+    } else {
+      const slotLeft = Math.min(
+        ...parentIdxs.map((i) => {
+          const a = sorted[i]!
+          const x = actionXBySortedIndex.get(i) ?? MARGIN_LEFT
+          return x - durationStartOffsetPx(groupMinSortTime, a.sortTime)
+        }),
+      )
+      for (const i of parentIdxs) {
+        const a = sorted[i]!
+        actionXBySortedIndex.set(
+          i,
+          slotLeft + durationStartOffsetPx(groupMinSortTime, a.sortTime),
+        )
+      }
+    }
+
+    const childBaseX = Math.min(
+      ...parentIdxs.map((i) => {
+        const a = sorted[i]!
+        const px = actionXBySortedIndex.get(i) ?? MARGIN_LEFT
+        return px + blockWidth(durationMode, a.durationMs) + 10
+      }),
+    )
+
+    for (const i of indices) {
+      const a = sorted[i]!
+      if (a.source !== 'child-session') continue
+      const local = childLocalXByIndex.get(i) ?? 0
+      actionXBySortedIndex.set(i, childBaseX + local)
+    }
+  }
 }
 
 /** Whether this action sits on the post-fork “new branch” track (still includes nested tasks/sub-sessions); marked via `forkCompareRow === 2`. */
@@ -319,19 +414,6 @@ function computeLayout(
   const hasNewBranchAction = sorted.some(isNewBranchAction)
   const hasForkNewBranchSession = sessionKeySet.has('session:fork-new-branch')
 
-  /** Task child-session region → treat as new-branch task if the parent Subagent has `forkCompareRow === 2` */
-  const isNewBranchTaskKey = (k: string): boolean => {
-    if (!k.startsWith('session:task:')) return false
-    const callID = k.slice('session:task:'.length)
-    const parent = sorted.find(
-      (a) => a.actionType === 'Subagent' && a.source !== 'child-session' && a.callID === callID,
-    )
-    if (parent) return parent.forkCompareRow === 2
-    /** Fallback when the parent Subagent is missing from current data (shouldn’t happen — inspect child-session flags) */
-    const anyAction = sorted.find((a) => actionSessionKey(a) === k)
-    return anyAction?.forkCompareRow === 2
-  }
-
   const sessionOrder: string[] = []
   if (sessionKeySet.has('session:main')) sessionOrder.push('session:main')
 
@@ -350,7 +432,7 @@ function computeLayout(
     }
   }
   const childKeys = [...sessionKeySet].filter(
-    (k) => k !== 'session:main' && k !== 'session:fork-new-branch'
+    (k) => k !== 'session:main' && k !== 'session:fork-new-branch',
   )
   const sortChildKeys = (keys: string[]) => {
     keys.sort((ka, kb) => {
@@ -376,8 +458,8 @@ function computeLayout(
    *   → new-branch task regions (parents live on the forked Subagent rail)
    * This keeps nested child sessions from interleaving legacy vs fork content; the fork stack reads as one block.
    */
-  const historicalChildKeys = sortChildKeys(childKeys.filter((k) => !isNewBranchTaskKey(k)))
-  const newBranchChildKeys = sortChildKeys(childKeys.filter((k) => isNewBranchTaskKey(k)))
+  const historicalChildKeys = sortChildKeys(childKeys.filter((k) => !isNewBranchTaskKey(k, sorted)))
+  const newBranchChildKeys = sortChildKeys(childKeys.filter((k) => isNewBranchTaskKey(k, sorted)))
   sessionOrder.push(...historicalChildKeys)
   if (hasForkNewBranchSession) sessionOrder.push('session:fork-new-branch')
   sessionOrder.push(...newBranchChildKeys)
@@ -408,9 +490,7 @@ function computeLayout(
     if (!a.parallelGroupId) {
       slotKey = `root:${nextRootSlot++}`
     } else {
-      const session = actionSessionKey(a)
-      const isParentTaskEntry = a.actionType === 'Subagent' && a.source !== 'child-session' && Boolean(a.callID)
-      const groupKey = isParentTaskEntry ? a.parallelGroupId : `${session}::${a.parallelGroupId}`
+      const groupKey = a.parallelGroupId
       const lane = a.parallelLaneIndex ?? 0
       let laneCounter = rootGroupLaneStepCounter.get(groupKey)
       if (!laneCounter) {
@@ -852,6 +932,13 @@ function computeLayout(
     }
   }
 
+  syncParallelGroupHorizontalPositions(
+    sorted,
+    actionXBySortedIndex,
+    childLocalXByIndex,
+    durationMode,
+  )
+
   /**
    * Terminator x placement per fork rail:
    *  - Main: trunk cursor reaches the farthest legacy action (nested child timelines included).
@@ -884,10 +971,7 @@ function computeLayout(
     const local = sorted.filter((a) => actionSessionKey(a) === session)
     let maxBottom = BLOCK_H
     for (const a of local) {
-      /** Within-session y comes from kernel/tool row plus parallel lanes; forks already split via `sessionTopY`. */
-      const yInSession =
-        actionLocalRowForLayout(a) * ROW_H + laneOffsetY(a.parallelLaneIndex)
-      maxBottom = Math.max(maxBottom, yInSession + BLOCK_H)
+      maxBottom = Math.max(maxBottom, verticalOffsetInSession(a) + BLOCK_H)
     }
     sessionY += maxBottom + SESSION_REGION_GAP
   }
@@ -920,8 +1004,7 @@ function computeLayout(
       const xNode = actionXBySortedIndex.get(i) ?? MARGIN_LEFT
       const session = actionSessionKey(a)
       const yBase = sessionTopY.get(session) ?? TOP_PAD
-      /** Matches sessionTopY base without legacy `forkCompareRow * FORK_COMPARE_ROW_GAP` bumps */
-      const y = yBase + actionLocalRowForLayout(a) * ROW_H + laneOffsetY(a.parallelLaneIndex)
+      const y = yBase + verticalOffsetInSession(a)
       const cy = y + BLOCK_H / 2
       layout.push({ node, x: xNode, y, w, h: BLOCK_H, cx: xNode + w / 2, cy })
     }
@@ -946,6 +1029,86 @@ function parallelSiblingSkip(pa: MappedAction, pb: MappedAction): boolean {
   return pa.parallelLaneIndex !== pb.parallelLaneIndex
 }
 
+/** Minimum eastward clearance before turning toward the target (duration wide blocks may sit left of slot cursor). */
+const EDGE_ROUTE_GAP = 10
+
+function userRequestCircleRadius(w: number, h: number): number {
+  return Math.max(5, Math.min(w, h) / 2 - 3)
+}
+
+function endNodeCircleRadius(h: number): number {
+  return h / 2 - 2
+}
+
+/** Visual right anchor for connectors (rect trailing edge or circle circumference). */
+function edgeAnchorRight(item: FlowLayoutItem): number {
+  if (item.node.kind === 'end') {
+    return item.x + item.w / 2 + endNodeCircleRadius(item.h)
+  }
+  const act = item.node as MappedAction & { row: number }
+  if (act.actionType === 'UserRequest') {
+    const r = userRequestCircleRadius(item.w, item.h)
+    return item.x + item.w / 2 + r
+  }
+  return item.x + item.w
+}
+
+/** Visual left anchor for connectors. */
+function edgeAnchorLeft(item: FlowLayoutItem): number {
+  if (item.node.kind === 'end') {
+    return item.x + item.w / 2 - endNodeCircleRadius(item.h)
+  }
+  const act = item.node as MappedAction & { row: number }
+  if (act.actionType === 'UserRequest') {
+    const r = userRequestCircleRadius(item.w, item.h)
+    return item.x + item.w / 2 - r
+  }
+  return item.x
+}
+
+function orthoEdgePathD(x1: number, y1: number, x2: number, y2: number): string {
+  if (x2 >= x1 + EDGE_ROUTE_GAP) {
+    const mid = (x1 + x2) / 2
+    const path = d3.path()
+    path.moveTo(x1, y1)
+    path.lineTo(mid, y1)
+    path.lineTo(mid, y2)
+    path.lineTo(x2, y2)
+    return path.toString()
+  }
+  const bypassX = x1 + EDGE_ROUTE_GAP
+  const path = d3.path()
+  path.moveTo(x1, y1)
+  path.lineTo(bypassX, y1)
+  path.lineTo(bypassX, y2)
+  path.lineTo(x2, y2)
+  return path.toString()
+}
+
+function appendOrthoEdgeBetweenItems(
+  content: d3.Selection<SVGGElement, unknown, null, undefined>,
+  from: FlowLayoutItem,
+  to: FlowLayoutItem,
+  markerUrl: string,
+  stroke: string,
+  strokeWidth: number,
+  fromKey: string | null = null,
+  toKey: string | null = null,
+) {
+  appendOrthoEdge(
+    content,
+    edgeAnchorRight(from),
+    from.cy,
+    edgeAnchorLeft(to),
+    to.cy,
+    markerUrl,
+    stroke,
+    strokeWidth,
+    fromKey,
+    toKey,
+  )
+}
+
 /**
  * Single predecessor fans out to parallel successors via one shared bundle column so vertical segments overlap cleanly.
  * - Draw the trunk horizontally once (no arrow head).
@@ -965,18 +1128,22 @@ function appendOrthoFanOut(
 
   if (targets.length === 1) {
     const t = targets[0]!
-    appendOrthoEdge(content, source.x + source.w, source.cy, t.x, t.cy, baseMarker, baseStroke, 1.2,
+    appendOrthoEdgeBetweenItems(content, source, t, baseMarker, baseStroke, 1.2,
       sna ? actionKey(sna) : null,
       t.node.kind === 'action' ? actionKey(t.node as MappedAction & { row: number }) : null)
     return
   }
 
-  const minTargetX = Math.min(...targets.map((t) => t.x))
-  const bundleX = (source.x + source.w + minTargetX) / 2
+  const sourceRight = edgeAnchorRight(source)
+  const minTargetLeft = Math.min(...targets.map((t) => edgeAnchorLeft(t)))
+  const bundleX =
+    minTargetLeft >= sourceRight + EDGE_ROUTE_GAP
+      ? (sourceRight + minTargetLeft) / 2
+      : sourceRight + EDGE_ROUTE_GAP
 
   /** Trunk: source.right → bundleX (single segment, avoids stacked arrow markers on one x). */
   const trunk = d3.path()
-  trunk.moveTo(source.x + source.w, source.cy)
+  trunk.moveTo(sourceRight, source.cy)
   trunk.lineTo(bundleX, source.cy)
   const tp = content
     .append('path')
@@ -994,9 +1161,10 @@ function appendOrthoFanOut(
     const stroke = tna?.forkGhost ? FORK_GHOST_STROKE : baseStroke
     const m = tna?.forkGhost ? ghostMarkerUrl : baseMarker
     const branch = d3.path()
+    const targetLeft = edgeAnchorLeft(t)
     branch.moveTo(bundleX, source.cy)
     branch.lineTo(bundleX, t.cy)
-    branch.lineTo(t.x, t.cy)
+    branch.lineTo(targetLeft, t.cy)
     const bp = content
       .append('path')
       .attr('class', 'afv-edge')
@@ -1024,16 +1192,10 @@ function appendOrthoEdge(
   fromKey: string | null = null,
   toKey: string | null = null
 ) {
-  const mid = (x1 + x2) / 2
-  const path = d3.path()
-  path.moveTo(x1, y1)
-  path.lineTo(mid, y1)
-  path.lineTo(mid, y2)
-  path.lineTo(x2, y2)
   const p = content
     .append('path')
     .attr('class', 'afv-edge')
-    .attr('d', path.toString())
+    .attr('d', orthoEdgePathD(x1, y1, x2, y2))
     .attr('fill', 'none')
     .attr('stroke', stroke)
     .attr('stroke-width', strokeWidth)
@@ -1078,18 +1240,7 @@ function appendOrthoFanIn(
     const s = sources[0]!
     const na = s.node as MappedAction & { row: number }
     const { stroke, markerUrl: m } = joinStrokeForFanIn(na, target.node, markerUrl, ghostMarkerUrl)
-    appendOrthoEdge(
-      content,
-      s.x + s.w,
-      s.cy,
-      target.x,
-      target.cy,
-      m,
-      stroke,
-      1.2,
-      actionKey(na),
-      targetKey,
-    )
+    appendOrthoEdgeBetweenItems(content, s, target, m, stroke, 1.2, actionKey(na), targetKey)
     return
   }
   /**
@@ -1098,14 +1249,18 @@ function appendOrthoFanIn(
    * - Exactly one downstream trunk segment renders the arrow to avoid stacking N markers.
    * - Trunk tint follows the dominant non-ghost feeder when possible so the terminator reads clean.
    */
-  const maxEnd = Math.max(...sources.map(s => s.x + s.w))
-  const bundleX = (maxEnd + target.x) / 2
+  const maxEnd = Math.max(...sources.map((s) => edgeAnchorRight(s)))
+  const targetLeft = edgeAnchorLeft(target)
+  const bundleX =
+    targetLeft >= maxEnd + EDGE_ROUTE_GAP
+      ? (maxEnd + targetLeft) / 2
+      : maxEnd + EDGE_ROUTE_GAP
 
   for (const s of sources) {
     const na = s.node as MappedAction & { row: number }
     const { stroke } = joinStrokeForFanIn(na, target.node, markerUrl, ghostMarkerUrl)
     const path = d3.path()
-    path.moveTo(s.x + s.w, s.cy)
+    path.moveTo(edgeAnchorRight(s), s.cy)
     path.lineTo(bundleX, s.cy)
     path.lineTo(bundleX, target.cy)
     const p = content
@@ -1132,7 +1287,7 @@ function appendOrthoFanIn(
   )
   const trunk = d3.path()
   trunk.moveTo(bundleX, target.cy)
-  trunk.lineTo(target.x, target.cy)
+  trunk.lineTo(targetLeft, target.cy)
   const tp = content
     .append('path')
     .attr('class', 'afv-edge')
@@ -1471,15 +1626,15 @@ export default function ActionFlowVisualization({
           const na = layout[fromIdx]!.node as MappedAction & { row: number }
           const nb = layout[toIdx]!.node as MappedAction & { row: number }
           const { stroke: forkStroke, markerUrl: forkMarker } = edgeStrokeAndMarker(na, nb, markerUrl, ghostMarkerUrl)
-          appendOrthoEdge(
+          appendOrthoEdgeBetweenItems(
             content,
-            layout[fromIdx]!.x + layout[fromIdx]!.w,
-            layout[fromIdx]!.cy,
-            layout[toIdx]!.x,
-            layout[toIdx]!.cy,
+            layout[fromIdx]!,
+            layout[toIdx]!,
             forkMarker,
             forkStroke,
-            1.2
+            1.2,
+            actionKey(na),
+            actionKey(nb),
           )
         }
         firstIndices.push(sortedIdx[0]!)
@@ -1558,16 +1713,6 @@ export default function ActionFlowVisualization({
        * Skip implicit hops into terminator nodes — dedicated closing pass attaches each lane’s trailing action correctly.
        */
       if (b.node.kind === 'end') continue
-      const x1 = a.x + a.w
-      const y1 = a.cy
-      const x2 = b.x
-      const y2 = b.cy
-      const mid = (x1 + x2) / 2
-      const path = d3.path()
-      path.moveTo(x1, y1)
-      path.lineTo(mid, y1)
-      path.lineTo(mid, y2)
-      path.lineTo(x2, y2)
       const { stroke: segStroke, markerUrl: segMarker } =
         a.node.kind === 'action' && b.node.kind === 'action'
           ? edgeStrokeAndMarker(
@@ -1581,17 +1726,7 @@ export default function ActionFlowVisualization({
         a.node.kind === 'action' ? actionKey(a.node as MappedAction & { row: number }) : null
       const toKey =
         b.node.kind === 'action' ? actionKey(b.node as MappedAction & { row: number }) : null
-      const p = content
-        .append('path')
-        .attr('class', 'afv-edge')
-        .attr('d', path.toString())
-        .attr('fill', 'none')
-        .attr('stroke', segStroke)
-        .attr('stroke-width', 1.2)
-        .attr('marker-end', segMarker)
-        .attr('pointer-events', 'none')
-      if (fromKey) p.attr('data-from-key', fromKey)
-      if (toKey) p.attr('data-to-key', toKey)
+      appendOrthoEdgeBetweenItems(content, a, b, segMarker, segStroke, 1.2, fromKey, toKey)
     }
 
     /**
@@ -1635,18 +1770,7 @@ export default function ActionFlowVisualization({
         if (parallelSiblingSkip(pa, pb)) continue
         if (parallelJoinSkip.has(`${i}-${j}`)) continue
         const { stroke, markerUrl: m } = edgeStrokeAndMarker(pa, pb, markerUrl, ghostMarkerUrl)
-        appendOrthoEdge(
-          content,
-          ai.x + ai.w,
-          ai.cy,
-          bi.x,
-          bi.cy,
-          m,
-          stroke,
-          1.2,
-          actionKey(pa),
-          actionKey(pb),
-        )
+        appendOrthoEdgeBetweenItems(content, ai, bi, m, stroke, 1.2, actionKey(pa), actionKey(pb))
       }
     }
     connectPostAnchorTrack((a) => a.forkGhost === true)
@@ -1825,7 +1949,7 @@ export default function ActionFlowVisualization({
         const a = it.node as MappedAction & { row: number }
         const aIsNewBranch = isNewBranchAction(a)
         if (aIsNewBranch !== endIsForkBranch) continue
-        const right = it.x + it.w
+        const right = edgeAnchorRight(it)
         if (right > lastRight) {
           lastRight = right
           lastIdx = j
@@ -1838,12 +1962,10 @@ export default function ActionFlowVisualization({
       const isGhostEnd = !endIsForkBranch && hasForkNewBranchInLayout
       const stroke = isGhostEnd || lastAct.forkGhost ? FORK_GHOST_STROKE : actionFlowPalette.arrow
       const marker = isGhostEnd || lastAct.forkGhost ? ghostMarkerUrl : markerUrl
-      appendOrthoEdge(
+      appendOrthoEdgeBetweenItems(
         content,
-        lastItem.x + lastItem.w,
-        lastItem.cy,
-        endItem.x,
-        endItem.cy,
+        lastItem,
+        endItem,
         marker,
         stroke,
         1.2,
@@ -1940,18 +2062,7 @@ export default function ActionFlowVisualization({
             const toK = actionKey(pb)
             if (edgeExists(fromK, toK)) continue
             const { stroke, markerUrl: m } = edgeStrokeAndMarker(pa, pb, markerUrl, ghostMarkerUrl)
-            appendOrthoEdge(
-              content,
-              from.x + from.w,
-              from.cy,
-              to.x,
-              to.cy,
-              m,
-              stroke,
-              1.2,
-              fromK,
-              toK,
-            )
+            appendOrthoEdgeBetweenItems(content, from, to, m, stroke, 1.2, fromK, toK)
           }
         }
       }
@@ -1977,16 +2088,6 @@ export default function ActionFlowVisualization({
         }
       }
       if (!firstChild) continue
-      const x1 = item.x + item.w
-      const y1 = item.cy
-      const x2 = firstChild.x
-      const y2 = firstChild.cy
-      const mid = (x1 + x2) / 2
-      const branchPath = d3.path()
-      branchPath.moveTo(x1, y1)
-      branchPath.lineTo(mid, y1)
-      branchPath.lineTo(mid, y2)
-      branchPath.lineTo(x2, y2)
       const parentAct = node as MappedAction & { row: number }
       const childAct = firstChild.node as MappedAction & { row: number }
       const { stroke: branchStroke, markerUrl: branchMarker } = edgeStrokeAndMarker(
@@ -1995,10 +2096,16 @@ export default function ActionFlowVisualization({
         markerUrl,
         ghostMarkerUrl
       )
+      const branchPathD = orthoEdgePathD(
+        edgeAnchorRight(item),
+        item.cy,
+        edgeAnchorLeft(firstChild),
+        firstChild.cy,
+      )
       content
         .append('path')
         .attr('class', 'afv-edge')
-        .attr('d', branchPath.toString())
+        .attr('d', branchPathD)
         .attr('fill', 'none')
         .attr('stroke', branchStroke)
         .attr('stroke-width', 1.2)
@@ -2213,13 +2320,9 @@ export default function ActionFlowVisualization({
 
   const mockOffset = mockBranchForkActionIndex !== undefined ? ROW_H : 0
   const contentHeight = layoutEstimate.totalH + mockOffset
-  /** Scroll port enforces a two-lane minimum height; cap with `viewportMaxHeight` for inner scrolling */
+  /** Scroll port enforces a two-lane minimum height; height grows with content (no MAX_VISIBLE_ROWS cap) */
   const minContentHeight = MIN_SVG_CONTENT_HEIGHT
-  const maxVisibleHeight = Math.max(
-    TOP_PAD + MAX_VISIBLE_ROWS * ROW_H + BLOCK_H + BOTTOM_PAD,
-    minContentHeight
-  )
-  const normalViewportHeight = Math.min(Math.max(contentHeight, minContentHeight), maxVisibleHeight)
+  const normalViewportHeight = Math.max(contentHeight, minContentHeight)
   let viewportHeight = normalViewportHeight
   if (typeof viewportMaxHeight === 'number' && Number.isFinite(viewportMaxHeight) && viewportMaxHeight > 0) {
     viewportHeight = Math.min(viewportHeight, viewportMaxHeight)

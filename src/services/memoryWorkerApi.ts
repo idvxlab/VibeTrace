@@ -1,9 +1,11 @@
-import type { TurnTrace } from '../types/trace'
+import type { IngestTracePayload } from '../types/trace'
 
 function resolveMemoryWorkerBase(): string {
   const raw = import.meta.env.VITE_MEMORY_WORKER_BASE
-  if (typeof raw === 'string' && raw.trim()) return raw.trim().replace(/\/$/, '')
-  return 'http://127.0.0.1:8714'
+  // 空字符串或未配置 = 同源 /ingest-trace，由 Vite 代理到 memory-worker（plugin 模式）
+  if (raw === undefined || raw === '') return ''
+  if (typeof raw === 'string') return raw.trim().replace(/\/$/, '')
+  return ''
 }
 
 const BASE = resolveMemoryWorkerBase()
@@ -13,6 +15,9 @@ export interface MemoryWorkerIngestResult {
   runId?: string
   runDir?: string
   error?: string
+  /** Worker returned an existing run instead of starting a second pipeline. */
+  duplicate?: boolean
+  dedupKey?: string
   [key: string]: unknown
 }
 
@@ -22,7 +27,7 @@ export interface IngestContext {
 }
 
 export async function ingestTraceToMemoryWorker(
-  trace: TurnTrace,
+  trace: IngestTracePayload,
   context?: IngestContext,
 ): Promise<MemoryWorkerIngestResult> {
   const res = await fetch(`${BASE}/ingest-trace`, {

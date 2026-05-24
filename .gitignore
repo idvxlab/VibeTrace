@@ -11,8 +11,8 @@ node_modules
 dist
 dist-ssr
 *.local
-docs/
-# 嵌套的 OpenCode 源码仓（其内部有 .git，勿作为子目录整仓提交）
+
+# OpenCode 源码仓（其内部有 .git，勿作为子目录整仓提交）
 .opencode-src/
 .env.local
 .env.*.local
@@ -27,3 +27,13 @@ docs/
 *.njsproj
 *.sln
 *.sw?
+
+# Python
+**/__pycache__/
+*.py[cod]
+**/.pytest_cache/
+**/.venv/
+
+# memory-worker 运行时产物（trace 日志、plugin 状态）
+memory_worker/logs/
+.vibetrace-plugin-status.txt
