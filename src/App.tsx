@@ -469,6 +469,7 @@ function App() {
   const sessionsInFolder = useMemo(() => {
     return sessions
       .filter(s => sameDirectory(s.directory, selectedDirectory))
+      .filter(s => !shouldSkipTraceIngestForSession(s.id, s))
       .sort((a, b) => b.time.updated - a.time.updated)
   }, [sessions, selectedDirectory])
 

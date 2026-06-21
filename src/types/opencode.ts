@@ -98,7 +98,7 @@ export type ToolPart = {
     /** question tools may remain pending until the user responds */
     status: 'pending' | 'running' | 'completed' | 'error'
     input?: Record<string, unknown>
-    /** 多数工具为字符串；部分工具（如 `skill_router`）可能返回结构化 JSON */
+    /** 多数工具为字符串；部分工具可能返回结构化 JSON */
     output?: string | unknown
     /** Server-generated title (read path, websearch summary, bash description, etc.) */
     title?: string

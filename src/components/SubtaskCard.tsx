@@ -60,11 +60,6 @@ interface SubtaskCardProps {
   actionTypePaletteId: ActionTypePaletteId
   /** Auto-generated root-cause analysis for failed traces; absent keeps the original end tooltip unchanged. */
   errorDiagnosis?: MemoryWorkerErrorDiagnosis
-  /** Shows the title-row comment affordance while collecting skill feedback. */
-  feedbackMode?: boolean
-  isFeedbackSelected?: boolean
-  hasFeedbackComment?: boolean
-  onOpenFeedbackComment?: () => void
 }
 
 type ColorByMode = 'tokens' | 'type'
@@ -138,10 +133,6 @@ export default function SubtaskCard({
   onColorByChange,
   actionTypePaletteId,
   errorDiagnosis,
-  feedbackMode = false,
-  isFeedbackSelected = false,
-  hasFeedbackComment = false,
-  onOpenFeedbackComment,
 }: SubtaskCardProps) {
   const [nowTick, setNowTick] = useState(() => Date.now())
   const [actionsDurationOn, setActionsDurationOn] = useState(false)
@@ -523,31 +514,6 @@ export default function SubtaskCard({
         >
           {m.title}
         </h3>
-        {feedbackMode ? (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              onOpenFeedbackComment?.()
-            }}
-            title={hasFeedbackComment ? '查看或修改这个 panel 的反馈' : '给这个 panel 写反馈'}
-            style={{
-              flex: '0 0 auto',
-              border: hasFeedbackComment ? '1px solid #86B6FF' : '1px solid #D7E3F8',
-              borderRadius: 999,
-              background: isFeedbackSelected ? '#EDF5FF' : '#FFFFFF',
-              color: hasFeedbackComment ? '#185EA8' : '#44607C',
-              padding: '3px 8px',
-              fontSize: 10,
-              lineHeight: '14px',
-              fontWeight: 650,
-              cursor: 'pointer',
-              boxShadow: hasFeedbackComment ? '0 1px 6px rgba(24, 94, 168, 0.12)' : 'none',
-            }}
-          >
-            {hasFeedbackComment ? 'Commented' : 'Comment'}
-          </button>
-        ) : null}
       </div>
 
       <div
@@ -556,8 +522,9 @@ export default function SubtaskCard({
           display: 'flex',
           flexDirection: 'row',
           alignItems: 'center',
-          flexWrap: 'nowrap',
-          gap: 10,
+          flexWrap: 'wrap',
+          justifyContent: 'space-between',
+          gap: '6px 10px',
           width: '100%',
           flexShrink: 0,
           minWidth: 0,
@@ -568,9 +535,10 @@ export default function SubtaskCard({
             display: 'flex',
             flexDirection: 'row',
             alignItems: 'center',
-            flexWrap: 'nowrap',
+            flexWrap: 'wrap',
             gap: 8,
-            flexShrink: 0,
+            flex: '0 1 auto',
+            minWidth: 0,
           }}
         >
           <div
@@ -704,11 +672,11 @@ export default function SubtaskCard({
               display: 'flex',
               flexDirection: 'row',
               alignItems: 'center',
-              gap: 5,
+              flexWrap: 'wrap',
+              justifyContent: 'flex-end',
+              gap: '4px 5px',
               minWidth: 0,
-              flexWrap: 'nowrap',
-              flex: '1 1 auto',
-              marginLeft: 'auto',
+              flex: '1 1 220px',
             }}
           >
             <div
@@ -821,7 +789,7 @@ export default function SubtaskCard({
               style={{
                 minWidth: 56,
                 flex: '1 1 96px',
-                maxWidth: 140,
+                maxWidth: '100%',
                 height: 14,
                 verticalAlign: 'middle',
               }}

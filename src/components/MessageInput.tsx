@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { SHOW_COMPOSER_MODEL_UI } from '../config/featureFlags'
 import { COMPOSER_MODEL_DOM_ID } from '../config/storageKeys'
 import type { OcComposerModelOption } from '../services/opencodeApi'
@@ -36,6 +36,18 @@ const MAX_ROWS = 6
 const MIN_H = MIN_ROWS * LINE_PX
 const MAX_H = MAX_ROWS * LINE_PX
 
+const HIDDEN_FILE_INPUT_STYLE: CSSProperties = {
+  position: 'absolute',
+  width: 1,
+  height: 1,
+  padding: 0,
+  margin: -1,
+  overflow: 'hidden',
+  clip: 'rect(0, 0, 0, 0)',
+  whiteSpace: 'nowrap',
+  border: 0,
+}
+
 export default function MessageInput({
   onSend,
   onAbort,
@@ -55,6 +67,7 @@ export default function MessageInput({
   const [attachError, setAttachError] = useState<string | null>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const fileInputId = useId()
 
   useLayoutEffect(() => {
     const el = taRef.current
@@ -67,6 +80,7 @@ export default function MessageInput({
   const canSend =
     (text.trim().length > 0 || files.length > 0) && !sending && !disabled
   const canAbort = Boolean(isRunning && onAbort && !aborting && !disabled)
+  const attachDisabled = disabled || sending
 
   const nextSendModelHint = useMemo(() => {
     if (!SHOW_COMPOSER_MODEL_UI) return ''
@@ -117,14 +131,10 @@ export default function MessageInput({
     }
   }
 
-  const onPickFiles = () => {
-    setAttachError(null)
-    fileInputRef.current?.click()
-  }
-
   const onFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const list = e.target.files
     if (!list?.length) return
+    setAttachError(null)
     setFiles((prev) => [...prev, ...Array.from(list)])
     e.target.value = ''
   }
@@ -279,21 +289,23 @@ export default function MessageInput({
             padding: '8px 10px',
             borderTop: '1px solid #F0F0F0',
             background: '#FAFAFA',
+            position: 'relative',
           }}
         >
           <input
+            id={fileInputId}
             ref={fileInputRef}
             type="file"
             multiple
-            style={{ display: 'none' }}
+            disabled={attachDisabled}
+            style={HIDDEN_FILE_INPUT_STYLE}
             accept="image/*,.txt,.md,.json,.jsonc,.csv,.ts,.tsx,.js,.jsx,.css,.html,.xml,.yaml,.yml,.log,.env,.rs,.go,.py,.vue"
             onChange={onFileInputChange}
           />
-          <button
-            type="button"
-            onClick={onPickFiles}
-            disabled={disabled || sending}
+          <label
+            htmlFor={fileInputId}
             title="Attach images or text files"
+            aria-label="Attach images or text files"
             style={{
               width: 32,
               height: 32,
@@ -303,14 +315,15 @@ export default function MessageInput({
               background: '#FFFFFF',
               border: '1px solid #E8E8E8',
               borderRadius: 6,
-              cursor: disabled || sending ? 'not-allowed' : 'pointer',
-              opacity: disabled || sending ? 0.5 : 1,
+              cursor: attachDisabled ? 'not-allowed' : 'pointer',
+              opacity: attachDisabled ? 0.5 : 1,
+              pointerEvents: attachDisabled ? 'none' : 'auto',
             }}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="2">
               <path d="M12 5v14M5 12h14" />
             </svg>
-          </button>
+          </label>
 
           <button
             type="button"
