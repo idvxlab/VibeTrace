@@ -10,6 +10,8 @@ const OPENCODE_PROXY_PREFIXES = [
   '/path',
   '/config',
   '/question',
+  '/permission',
+  '/api',
   '/global',
 ] as const
 
@@ -31,16 +33,27 @@ function opencodeProxyRules(target: string, env: Record<string, string>): Record
     rules[prefix] = {
       target,
       changeOrigin: true,
+      // Long-lived `/global/event` SSE must not be cut by proxy idle timeouts
+      timeout: 0,
+      proxyTimeout: 0,
       configure: (proxy) => {
-        if (authHeader) {
-          proxy.on('proxyReq', (proxyReq) => {
-            proxyReq.setHeader('Authorization', authHeader)
-          })
-        }
+        proxy.on('proxyReq', (proxyReq, req) => {
+          if (authHeader) proxyReq.setHeader('Authorization', authHeader)
+          const url = req.url ?? ''
+          if (url.includes('/event')) {
+            proxyReq.setHeader('Accept', 'text/event-stream')
+            proxyReq.setHeader('Cache-Control', 'no-cache')
+          }
+        })
         // Strip upstream WWW-Authenticate on 401 to avoid browser login dialog
-        proxy.on('proxyRes', (proxyRes) => {
+        proxy.on('proxyRes', (proxyRes, req) => {
           delete proxyRes.headers['www-authenticate']
           delete proxyRes.headers['WWW-Authenticate']
+          const url = req.url ?? ''
+          if (url.includes('/event')) {
+            proxyRes.headers['cache-control'] = 'no-cache, no-transform'
+            proxyRes.headers['x-accel-buffering'] = 'no'
+          }
         })
       },
     }
@@ -95,6 +108,7 @@ export default defineConfig(({ mode }) => {
               '/task-feedback-distill': { target: mwTarget, changeOrigin: true },
               '/panel-analysis': { target: mwTarget, changeOrigin: true },
               '/task-segments': { target: mwTarget, changeOrigin: true },
+              '/experiment-report': { target: mwTarget, changeOrigin: true },
               '/health': { target: mwTarget, changeOrigin: true },
             }
           : {}),

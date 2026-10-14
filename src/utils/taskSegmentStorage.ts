@@ -163,11 +163,16 @@ export type TaskSegmentMessageRange = {
 /**
  * Resolve the message index window for a task tab against the live session timeline.
  * Falls back gracefully when fork truncation removed the original tab end marker.
+ *
+ * `extendToLiveEnd`: keep the chronologically latest tab open through the newest
+ * messages so the right-rail trajectory stays live while task-switch is still deciding
+ * (and before a new pending tab exists). Pending/provisional tabs always extend.
  */
 export function resolveTaskSegmentMessageRange(
   tab: TaskSegmentTab,
   messages: OcMessage[],
   priorTabs: TaskSegmentTab[],
+  options?: { extendToLiveEnd?: boolean },
 ): TaskSegmentMessageRange | null {
   if (messages.length === 0) return null
 
@@ -185,15 +190,23 @@ export function resolveTaskSegmentMessageRange(
       : previousEndIndex >= 0
         ? previousEndIndex + 1
         : 0
-  if (startIndex >= messages.length) return null
 
   const explicitEndIndex = tab.toEndAssistantMessageId
     ? messageIndexById(messages, tab.toEndAssistantMessageId)
     : -1
 
+  const openEnded =
+    tab.status === 'pending' || tab.provisional || Boolean(options?.extendToLiveEnd)
+
+  // New pending / post-fork tabs often activate before any message exists after the
+  // previous task end. Treat that as "no window yet" so callers can fall back instead
+  // of blanking the right-rail trajectory.
+  if (startIndex >= messages.length) return null
+
   let endIndex: number
-  if (tab.status === 'pending' || tab.provisional) {
-    endIndex = explicitEndIndex >= 0 ? explicitEndIndex : messages.length - 1
+  if (openEnded) {
+    // Always follow the live timeline — do not clip at a stale toEndAssistantMessageId.
+    endIndex = messages.length - 1
   } else if (explicitEndIndex >= 0) {
     endIndex = explicitEndIndex
   } else {
@@ -203,6 +216,54 @@ export function resolveTaskSegmentMessageRange(
 
   if (endIndex < startIndex) return null
   return { startIndex, endIndex }
+}
+
+export type TaskSegmentSubtaskLike = {
+  assistantMessageIndices?: number[]
+}
+
+/**
+ * Keep subtasks whose **first** assistant message falls in the tab window.
+ * Using the anchor (not `.every`) avoids cards vanishing from every tab when a
+ * segment boundary bisects a multi-message subtask after fork / task-switch.
+ */
+export function filterSubtasksForTaskSegmentRange<T extends { subtask: TaskSegmentSubtaskLike }>(
+  items: T[],
+  range: TaskSegmentMessageRange,
+): T[] {
+  const { startIndex, endIndex } = range
+  return items.filter(({ subtask }) => {
+    const assistantIndices = subtask.assistantMessageIndices ?? []
+    if (assistantIndices.length === 0) return false
+    const anchor = assistantIndices[0]!
+    return anchor >= startIndex && anchor <= endIndex
+  })
+}
+
+/**
+ * Resolve the message window used to render the right-rail trajectory for a task tab.
+ * Falls back to the previous tab (or the full timeline) when the active tab has no
+ * messages yet — common right after task-switch / fork.
+ */
+export function resolveVisibleTaskSegmentRange(
+  activeTab: TaskSegmentTab,
+  tabs: TaskSegmentTab[],
+  messages: OcMessage[],
+): TaskSegmentMessageRange | null {
+  const activeSegmentIndex = tabs.findIndex((tab) => tab.id === activeTab.id)
+  const priorTabs = activeSegmentIndex > 0 ? tabs.slice(0, activeSegmentIndex) : []
+  const isLatestTab = activeSegmentIndex >= 0 && activeSegmentIndex === tabs.length - 1
+  const range = resolveTaskSegmentMessageRange(activeTab, messages, priorTabs, {
+    extendToLiveEnd: isLatestTab,
+  })
+  if (range) return range
+
+  if (!isLatestTab || priorTabs.length === 0) return null
+
+  const prior = priorTabs[priorTabs.length - 1]!
+  return resolveTaskSegmentMessageRange(prior, messages, priorTabs.slice(0, -1), {
+    extendToLiveEnd: true,
+  })
 }
 
 /** Drop tabs whose start lies beyond the session, and clamp stale extracted ends after fork. */

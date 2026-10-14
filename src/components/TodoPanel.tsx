@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from 'react'
+import { experimentTelemetry } from '../experiment/telemetry'
 import type { OcTodo } from '../types/opencode'
 import type { CanonicalTodo, LatestTodowriteBatchProgress } from '../utils/todoRegistry'
 
@@ -19,6 +20,12 @@ interface TodoPanelProps {
   latestTodowriteBatchProgress: LatestTodowriteBatchProgress | null
   highlightTodoIds?: Set<string> | null
   onTodoClick?: (todo: OcTodo) => void
+  /** Any click inside the Todo panel (header, section toggles, todo rows). */
+  onPanelClick?: (detail: {
+    target: 'header' | 'section' | 'todo'
+    section?: 'open' | 'done' | 'history'
+    todoId?: string
+  }) => void
   listScrollRef?: RefObject<HTMLDivElement | null>
   /** Increment when selecting a subtask — auto-expands relevant sections */
   todoPanelRevealGeneration?: number
@@ -50,6 +57,7 @@ export default function TodoPanel({
   latestTodowriteBatchProgress,
   highlightTodoIds,
   onTodoClick,
+  onPanelClick,
   listScrollRef,
   todoPanelRevealGeneration = 0,
 }: TodoPanelProps) {
@@ -120,6 +128,7 @@ export default function TodoPanel({
   if (latestActive.length === 0 && archivedCompleted.length === 0) return null
 
   const toggleMainPanel = () => {
+    onPanelClick?.({ target: 'header' })
     setPanelExpanded(prev => {
       const next = !prev
       if (next) {
@@ -132,6 +141,7 @@ export default function TodoPanel({
   }
 
   const handleTodoPick = (todo: CanonicalTodo) => {
+    onPanelClick?.({ target: 'todo', todoId: todo.id })
     setPanelExpanded(true)
     const inHistory = archivedCompleted.some(t => t.id === todo.id)
     if (inHistory) {
@@ -152,6 +162,13 @@ export default function TodoPanel({
 
   return (
     <div
+      onPointerEnter={() => experimentTelemetry.enterPanelFocus('todo')}
+      onPointerLeave={(e) => {
+        const related = e.relatedTarget as Node | null
+        const column = (e.currentTarget as HTMLElement).closest('[data-exp-focus="chat-column"]')
+        const stayInChat = Boolean(column && related && column.contains(related))
+        experimentTelemetry.leavePanelFocus('todo', stayInChat ? 'chat' : undefined)
+      }}
       style={{
         maxWidth: '100%',
         margin: '0 16px',
@@ -224,7 +241,10 @@ export default function TodoPanel({
           <div style={{ borderTop: '1px solid #F0F0F0', paddingTop: 6 }}>
             <button
               type="button"
-              onClick={() => setOpenSectionExpanded(v => !v)}
+              onClick={() => {
+                onPanelClick?.({ target: 'section', section: 'open' })
+                setOpenSectionExpanded(v => !v)
+              }}
               style={{
                 width: '100%',
                 display: 'flex',
@@ -270,7 +290,10 @@ export default function TodoPanel({
             <div style={{ borderTop: '1px solid #F0F0F0', paddingTop: 4 }}>
               <button
                 type="button"
-                onClick={() => setDoneOnListExpanded(v => !v)}
+                onClick={() => {
+                  onPanelClick?.({ target: 'section', section: 'done' })
+                  setDoneOnListExpanded(v => !v)
+                }}
                 style={{
                   width: '100%',
                   display: 'flex',
@@ -305,7 +328,10 @@ export default function TodoPanel({
             <div style={{ borderTop: '1px solid #F0F0F0', paddingTop: 4 }}>
               <button
                 type="button"
-                onClick={() => setHistoryExpanded(v => !v)}
+                onClick={() => {
+                  onPanelClick?.({ target: 'section', section: 'history' })
+                  setHistoryExpanded(v => !v)
+                }}
                 style={{
                   width: '100%',
                   display: 'flex',

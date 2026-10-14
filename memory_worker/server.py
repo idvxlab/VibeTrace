@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 import re
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -41,6 +42,10 @@ if _TRACE_PARSER_SPEC is None or _TRACE_PARSER_SPEC.loader is None:
     raise RuntimeError("failed to load memory_worker/trace_parser.py")
 trace_parser = importlib.util.module_from_spec(_TRACE_PARSER_SPEC)
 _TRACE_PARSER_SPEC.loader.exec_module(trace_parser)
+
+# skill_evolve package lives under memory_worker/; ensure importable without install.
+if str(WORKER_ROOT) not in sys.path:
+    sys.path.insert(0, str(WORKER_ROOT))
 
 
 def load_env_file(path: Path, *, override: bool = False) -> None:
@@ -85,8 +90,13 @@ SKILL_WRITE_ROOT = resolve_config_path(os.environ.get("SKILL_WRITE_ROOT"), Path.
 SKILL_LOAD_ROOTS = split_env_paths(os.environ.get("SKILL_LOAD_ROOTS"))
 SKILL_SEARCH_ROOTS_EXTRA = split_env_paths(os.environ.get("SKILL_SEARCH_ROOTS_EXTRA"))
 MW_ANALYZER_MODE = (os.environ.get("MW_ANALYZER_MODE") or "opencode").strip().lower()
+# opencode / opencode_content / llm: OpenCode generates file contents as JSON only;
+# memory_worker always performs disk writes (avoids external_directory permission asks).
 MW_WRITER_MODE = (os.environ.get("MW_WRITER_MODE") or "opencode").strip().lower()
 MW_TASK_SWITCH_MODE = (os.environ.get("MW_TASK_SWITCH_MODE") or "opencode").strip().lower()
+# skill_evolve = vibetrace-skill online distill; legacy = analyzer+writer
+# chinese branch default: legacy (analyzer+writer). Set MW_SKILL_PIPELINE=skill_evolve to opt in.
+MW_SKILL_PIPELINE = (os.environ.get("MW_SKILL_PIPELINE") or "legacy").strip().lower()
 MW_SESSION_STRATEGY = (os.environ.get("MW_SESSION_STRATEGY") or "new").strip().lower()
 MW_SESSION_TITLE_PREFIX = (os.environ.get("MW_SESSION_TITLE_PREFIX") or "[mw-internal]").strip()
 MW_CORS_ORIGINS = [x.strip() for x in (os.environ.get("MW_CORS_ORIGINS") or "http://localhost:5173;http://127.0.0.1:5173").split(";") if x.strip()]
@@ -98,11 +108,12 @@ MW_OPENCODE_HTTP_TIMEOUT_SEC = 60
 MW_OPENCODE_MESSAGE_TIMEOUT_SEC = 180
 MW_ANALYZER_WAIT_PER_ATTEMPT_SEC = 180
 
-ANALYZER_IN_SESSION_RETRY_PROMPT = (
-    "The previous reply did not complete within the time limit. Continue in this same session: "
-    "finish the skill analysis and output the full JSON envelope only (skill_suggestions array), "
-    "with no extra prose before or after the JSON."
+# Same free default as frontend `VIBETRACE_DEFAULT_MODEL_REF` (`src/config/opencodeDefaults.ts`).
+# Every worker → OpenCode message MUST send an explicit model; never fall back to user config.
+MW_DEFAULT_MODEL_REF = (
+    (os.environ.get("MW_OPENCODE_MODEL") or "").strip() or "opencode/big-pickle"
 )
+
 
 
 def parse_worker_port() -> int:
@@ -147,13 +158,13 @@ def ensure_prompt_files() -> None:
     if not analyzer.exists():
         analyzer.write_text(
             (
-                "You are SkillAnalyzer (Judge). From trace and pool_summary, output a single JSON object only; no explanatory prose.\n\n"
-                "Requirements:\n"
-                "1) operation must be CREATE / UPDATE / NONE only\n"
-                "2) NONE: skill_name='' and source_skill_absolute_path=''\n"
-                "3) UPDATE: source_skill_absolute_path must be non-empty and from pool_summary\n"
-                "4) guide must include folders, file_guidance, skill_md, trace_anchors\n\n"
-                "Output schema: SkillJudgeEnvelope v2.0.\n\n"
+                "你是 Skill 分析器（Judge）。根据 trace 与 pool_summary，仅输出单个 JSON 对象，不要解释性文字。\n\n"
+                "要求：\n"
+                "1) operation 只能是 CREATE / UPDATE / NONE\n"
+                "2) NONE：skill_name='' 且 source_skill_absolute_path=''\n"
+                "3) UPDATE：source_skill_absolute_path 须非空且来自 pool_summary\n"
+                "4) guide 须含 folders、file_guidance、skill_md、trace_anchors\n\n"
+                "输出 schema：SkillJudgeEnvelope v2.0。\n\n"
                 "trace:\n{{TRACE_JSON}}\n\n"
                 "pool_summary:\n{{POOL_SUMMARY_JSON}}\n"
             ),
@@ -163,12 +174,12 @@ def ensure_prompt_files() -> None:
     if not switcher.exists():
         switcher.write_text(
             (
-                "You are TaskSwitchJudge. From user input alone, decide whether the task switched from the previous segment to the current input.\n\n"
-                "The input JSON contains previous_user_prompts (accumulated user input since last extraction, old→new) "
-                "and current_user_prompt (this turn's user input). Do not use agent execution information.\n\n"
-                "Set task_switched=true when the current input starts a new goal, deliverable, or problem domain, "
-                "rather than a supplement, correction, continuation, verification, or format tweak to the prior task.\n\n"
-                "Output only a JSON object:\n"
+                "你是 TaskSwitchJudge。仅根据用户输入，判断任务是否从上一段切换到当前输入。\n\n"
+                "输入 JSON 含 previous_user_prompts（自上次提取以来累积的用户输入，旧→新）"
+                "与 current_user_prompt（本轮用户输入）。不要使用 agent 执行信息。\n\n"
+                "当当前输入开启新目标、交付物或问题域，而非对上一任务的补充、纠正、继续、验证或格式调整时，"
+                "设 task_switched=true。\n\n"
+                "仅输出 JSON 对象：\n"
                 "{\"task_switched\": boolean, \"confidence\": \"low|medium|high\", "
                 "\"reason\": \"string\", "
                 "\"previous_task\": {\"title\": \"string\", \"description\": \"string\"}, "
@@ -181,19 +192,19 @@ def ensure_prompt_files() -> None:
     if not feedback.exists():
         feedback.write_text(
             (
-                "You are FeedbackSkillDistiller. You receive a task segment, overall user feedback, "
-                "and localized feedback on one or more trace panels.\n\n"
-                "Goal: distill this feedback into a reusable skill draft to guide the agent on similar task/trace patterns later.\n\n"
-                "When feedbackContext.traceKind=\"feedback\" in the input, this is a feedback-distillation variant of the analyzer trace; "
-                "selectedPanels contains only user-selected panel traces—do not analyze unselected panels.\n\n"
-                "Requirements:\n"
-                "1. Output JSON only; no Markdown, explanations, or code fences.\n"
-                "2. skill_name uses kebab-case; keep it short and stable.\n"
-                "3. description describes trigger scenarios; do not merely restate the task id.\n"
-                "4. steps must be executable behavioral rules.\n"
-                "5. trace_anchors should cite panel subtaskIndex/actionKey/messageId etc. from the input to show where feedback came from.\n"
-                "6. If information is insufficient to distill a skill, output operation=\"NONE\" and explain why in rationale.\n\n"
-                "Output schema:\n"
+                "你是 FeedbackSkillDistiller。你将收到任务段、整体用户反馈，"
+                "以及用户对一个或多个 trace 面板的局部反馈。\n\n"
+                "目标：将反馈蒸馏为可复用 skill 草稿，指导 agent 处理类似任务/trace 模式。\n\n"
+                "当输入中 feedbackContext.traceKind=\"feedback\" 时，这是分析器 trace 的反馈蒸馏变体；"
+                "selectedPanels 仅含用户选中的面板 trace — 不要分析未选中的面板。\n\n"
+                "要求：\n"
+                "1. 仅输出 JSON；无 Markdown、说明或代码围栏。\n"
+                "2. skill_name 使用 kebab-case，简短稳定。\n"
+                "3. description 描述触发场景；不要仅复述任务 id。\n"
+                "4. steps 须为可执行的行为规则。\n"
+                "5. trace_anchors 应引用输入中的 subtaskIndex/actionKey/messageId 等，说明反馈来源。\n"
+                "6. 若信息不足以蒸馏 skill，输出 operation=\"NONE\" 并在 rationale 中说明原因。\n\n"
+                "输出 schema：\n"
                 "{\n"
                 "  \"operation\": \"CREATE\" | \"UPDATE\" | \"NONE\",\n"
                 "  \"skill_name\": \"string\",\n"
@@ -219,26 +230,26 @@ def ensure_prompt_files() -> None:
     if not error_diagnosis.exists():
         error_diagnosis.write_text(
             (
-                "You are VibeTrace Panel Analyzer. You receive a completed subtask trace. It may succeed or contain failed actions.\n\n"
-                "Goal: produce a minimal interpretation for this trace panel. If there is no error, explain in one sentence what it was for, what was done, and what was ultimately obtained. "
-                "If there is an error, give the same one-sentence process summary first, then error correction, cause analysis, and causal reasoning: where it failed, root cause, why the error occurred, and how to fix next.\n\n"
-                "Requirements:\n"
-                "1. Output JSON only; no Markdown, explanations, or code fences.\n"
-                "2. summary must be one sentence, as short as possible, in the form \"To X, performed Y, ultimately obtained Z\".\n"
-                "3. Summarize strictly from input.subtask.actions and input.errorActions; do not invent goals, results, files, pages, or errors not in the trace.\n"
-                "4. Describe overall steps without an action-by-action log; keep it concise, summarized, and readable.\n"
-                "5. Do not use unescaped ASCII double quotes inside JSON strings; when quoting the user, use guillemets, single quotes, or omit the quote.\n"
-                "6. If input.hasError=false, rootCause, causalChain, evidence, fixSuggestion must be empty string or empty array; confidence reflects trace completeness.\n"
-                "7. If input.hasError=true, reason only from evidence in the input trace; if evidence is insufficient, set confidence=\"low\".\n"
-                "8. When there is an error, distinguish surface error (e.g. tool error text) from root cause (e.g. wrong path, missing validation, concurrent subtask failure).\n"
-                "9. causalChain, evidence, and fixSuggestion are optional; fill only when the trace has clear evidence, otherwise keep empty arrays/strings to avoid verbosity.\n\n"
-                "Output schema:\n"
+                "你是 VibeTrace 面板分析器。你将收到已完成的子任务 trace，可能成功或含失败动作。\n\n"
+                "目标：为该 trace 面板生成最简解读。无错误时用一句话说明用途、做了什么、最终得到什么。"
+                "有错误时先给同样形式的一句话过程摘要，再写纠错、根因与因果：失败点、根因、为何出错、如何修复。\n\n"
+                "要求：\n"
+                "1. 仅输出 JSON；无 Markdown、说明或代码围栏。\n"
+                "2. summary 须为一句话，尽可能短，形式接近「为 X，执行了 Y，最终得到 Z」。\n"
+                "3. 严格从 input.subtask.actions 与 input.errorActions 归纳；不要编造 trace 中不存在的目标、结果、文件、页面或错误。\n"
+                "4. 描述整体步骤，不要逐动作流水账；保持简洁可读。\n"
+                "5. JSON 字符串内不要使用未转义的 ASCII 双引号；引用用户时用书名号、单引号或省略引号。\n"
+                "6. 若 input.hasError=false，rootCause、causalChain、evidence、fixSuggestion 须为空字符串或空数组；confidence 反映 trace 完整度。\n"
+                "7. 若 input.hasError=true，仅根据输入 trace 证据推理；证据不足时设 confidence=\"low\"。\n"
+                "8. 有错误时区分表面错误与根因（如路径错误、缺少校验、并发子任务失败）。\n"
+                "9. causalChain、evidence、fixSuggestion 可选；仅在有明确证据时填写，否则保持空以避免冗长。\n\n"
+                "输出 schema：\n"
                 "{\n"
-                "  \"summary\": \"One sentence: what this panel was for, what it did, and what it produced\",\n"
-                "  \"rootCause\": \"Empty when no error; root cause when there is an error\",\n"
+                "  \"summary\": \"一句话：面板用途、做了什么、产出什么\",\n"
+                "  \"rootCause\": \"无错误时为空；有错误时为根因\",\n"
                 "  \"causalChain\": [],\n"
                 "  \"evidence\": [],\n"
-                "  \"fixSuggestion\": \"Empty when no error; next-step suggestion when there is an error\",\n"
+                "  \"fixSuggestion\": \"无错误时为空；有错误时为下一步建议\",\n"
                 "  \"confidence\": \"high\" | \"medium\" | \"low\"\n"
                 "}\n\n"
                 "input:\n{{ERROR_DIAGNOSIS_INPUT_JSON}}\n"
@@ -248,10 +259,10 @@ def ensure_prompt_files() -> None:
     if not writer.exists():
         writer.write_text(
             (
-                "You are SkillWriter.\n"
-                "- CREATE: create a skill directory under SKILL_WRITE_ROOT/<skill_name>/\n"
-                "- UPDATE: read source_skill_bundle first, then rewrite\n"
-                "- NONE: skip\n"
+                "你是 Skill 文案生成器。只输出含 files[].content 的 JSON；禁止使用工具写盘。\n"
+                "- CREATE / UPDATE：生成 SKILL.md 等文件完整内容\n"
+                "- NONE：status=skipped\n"
+                "落盘由 memory_worker 完成。\n"
             ),
             encoding="utf-8",
         )
@@ -658,6 +669,7 @@ def run_task_switch_judge(
         "00a-task-switch",
         directory=directory,
         parent_session_id=None,
+        retry_with_new_session=True,
     )
     parsed = _parse_task_switch_decision(
         str(llm_out.get("rawText") or ""),
@@ -1159,6 +1171,10 @@ def _skill_records_from_pipeline_result(result: dict[str, Any]) -> list[dict[str
         writer = item.get("result") if isinstance(item.get("result"), dict) else {}
         skill_name = str(writer.get("skillName") or suggestion.get("skill_name") or "").strip()
         target_dir = str(writer.get("targetDir") or "").strip()
+        if not target_dir:
+            removed = writer.get("removedPaths")
+            if isinstance(removed, list) and removed:
+                target_dir = str(removed[0] or "").strip()
         status = str(writer.get("status") or "").strip() or "unknown"
         if not skill_name and not target_dir:
             continue
@@ -1170,6 +1186,7 @@ def _skill_records_from_pipeline_result(result: dict[str, Any]) -> list[dict[str
                 "operation": str(writer.get("operation") or suggestion.get("operation") or ""),
                 "rationale": str(suggestion.get("rationale") or ""),
                 "createdAt": now_iso(),
+                "engine": str(writer.get("engine") or result.get("engine") or suggestion.get("engine") or ""),
             }
         )
     return records
@@ -1308,7 +1325,7 @@ def _history_entry_from_pipeline_suggestion(
         task_label = str(task_segment.get("summary") or task_segment.get("title") or task_segment.get("description") or "").strip()
     return {
         "id": f"pipeline:{run_dir}:{created_at}",
-        "source": "pipeline",
+        "source": "skill_evolve" if str(suggestion.get("engine") or "") == "skill_evolve" else "pipeline",
         "channel": "task_switch",
         "operation": operation,
         "rationale": rationale,
@@ -1321,6 +1338,7 @@ def _history_entry_from_pipeline_suggestion(
         "taskLabel": task_label,
         "runDir": run_dir,
         "skillName": str(suggestion.get("skill_name") or "").strip(),
+        "engine": str(suggestion.get("engine") or ""),
     }
 
 
@@ -1593,6 +1611,43 @@ def save_task_skill_md(payload: dict[str, Any]) -> dict[str, Any]:
         "skillName": skill_name,
         "historyEntry": entry,
     }
+
+
+def mark_task_skill_status(
+    session_id: str,
+    task_segment: dict[str, Any],
+    *,
+    status: str,
+    pipeline_run_dir: str = "",
+    error: str = "",
+) -> None:
+    """Mark a task skill index entry (e.g. distilling) so the Skill Panel can poll."""
+    task_id = str(task_segment.get("taskId") or "").strip()
+    if not session_id or not task_id:
+        return
+    with _task_switch_lock:
+        index = _load_task_skill_index()
+        tasks = index.setdefault("tasks", {})
+        key = _task_skill_key(session_id, task_id)
+        existing = tasks.get(key) if isinstance(tasks.get(key), dict) else {}
+        skills = [x for x in existing.get("skills", []) if isinstance(x, dict)]
+        entry: dict[str, Any] = {
+            **existing,
+            "sessionId": session_id,
+            "taskId": task_id,
+            "taskSegment": task_segment or existing.get("taskSegment") or {},
+            "status": status,
+            "skills": skills,
+            "updatedAt": now_iso(),
+        }
+        if pipeline_run_dir:
+            entry["pipelineRunDir"] = pipeline_run_dir
+        if error:
+            entry["error"] = error
+        elif "error" in entry and status in {"distilling", "ready", "none"}:
+            entry.pop("error", None)
+        tasks[key] = entry
+        _save_task_skill_index(index)
 
 
 def register_task_skill_result(
@@ -2115,12 +2170,8 @@ def distill_feedback_skill(payload: dict[str, Any]) -> dict[str, Any]:
             "02a-feedback-distiller",
             directory=directory,
             parent_session_id=parent_session_id,
-            retry_in_session_on_timeout=True,
+            retry_with_new_session=True,
             max_attempts=MW_ANALYZER_SESSION_ATTEMPTS,
-            retry_prompt=(
-                "The previous reply did not complete or was not parseable. Continue in this same session: "
-                "finish the feedback distillation and output the JSON object only, with no extra prose."
-            ),
         )
     except Exception as e:
         append_log(log_file, "feedback_distill.llm.failed", {"error": str(e)})
@@ -2744,6 +2795,51 @@ def _fallback_panel_analysis_from_raw(raw_text: str, has_error: bool) -> dict[st
     }
 
 
+def opencode_get_session(session_id: str, directory: str | None = None) -> dict[str, Any] | None:
+    session_id = str(session_id or "").strip()
+    if not session_id:
+        return None
+    try:
+        status, text = opencode_request("GET", f"/session/{session_id}", directory=directory)
+    except Exception:
+        return None
+    if status != 200 or not str(text or "").strip():
+        return None
+    try:
+        data = json.loads(text)
+    except Exception:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _is_known_panel_analysis_analyzer_session(session_id: str) -> bool:
+    """True if this session was created as a panel-analysis LLM session (loop risk)."""
+    session_id = str(session_id or "").strip()
+    if not session_id:
+        return False
+    index = _load_error_diagnosis_index()
+    diagnoses = index.get("diagnoses") if isinstance(index.get("diagnoses"), dict) else {}
+    for entry in diagnoses.values():
+        if not isinstance(entry, dict):
+            continue
+        if str(entry.get("diagnosisSessionID") or "").strip() == session_id:
+            return True
+    return False
+
+
+def is_mw_internal_session(session_id: str, directory: str | None = None) -> bool:
+    """Skip panel-analysis / diagnosis for memory-worker internal analyzer sessions."""
+    session_id = str(session_id or "").strip()
+    if not session_id:
+        return False
+    if _is_known_panel_analysis_analyzer_session(session_id):
+        return True
+    session = opencode_get_session(session_id, directory=directory)
+    title = str((session or {}).get("title") or "").strip()
+    prefix = (MW_SESSION_TITLE_PREFIX or "").strip()
+    return bool(prefix and title.startswith(prefix))
+
+
 def run_error_diagnosis_for_trace(
     trace: dict[str, Any],
     directory_override: str | None = None,
@@ -2756,6 +2852,20 @@ def run_error_diagnosis_for_trace(
     end_msg_id = str(turn.get("endAssistantMessageId") or trace_primary_end_message_id(trace) or "").strip()
     trace_dir = str((session.get("directory") or "")).strip()
     effective_directory = directory_override or trace_dir or OPENCODE_DIRECTORY
+
+    if session_id and is_mw_internal_session(session_id, directory=effective_directory):
+        print(
+            "[memory-worker] error-diagnosis.skip mw-internal "
+            f"sessionId={session_id}"
+        )
+        return {
+            "ok": True,
+            "count": 0,
+            "items": [],
+            "skipped": True,
+            "reason": "mw_internal_session",
+            "sessionId": session_id,
+        }
 
     subtasks = primary.get("subtasks")
     if not isinstance(subtasks, list):
@@ -2780,8 +2890,11 @@ def run_error_diagnosis_for_trace(
             diagnoses = index.setdefault("diagnoses", {})
             existing = diagnoses.get(dedup_key) if isinstance(diagnoses.get(dedup_key), dict) else None
             if existing:
-                items.append({**existing, "dedupKey": dedup_key, "cached": True})
-                continue
+                status = str(existing.get("status") or "")
+                # Stale "running" entries must not block a fresh panel analysis forever.
+                if not (status == "running" and not _error_diagnosis_running_is_fresh(existing)):
+                    items.append({**existing, "dedupKey": dedup_key, "cached": True})
+                    continue
 
             run_dir = _error_diagnosis_run_dir(session_id, end_msg_id, subtask_index, signature_hash)
             record = {
@@ -2829,12 +2942,8 @@ def run_error_diagnosis_for_trace(
                 "03-error-diagnosis",
                 directory=effective_directory,
                 parent_session_id=parent_session_id or session_id,
-                retry_in_session_on_timeout=True,
+                retry_with_new_session=True,
                 max_attempts=MW_ANALYZER_SESSION_ATTEMPTS,
-                retry_prompt=(
-                    "The previous reply did not complete or was not parseable. Continue in this same session: "
-                    "finish the trace panel analysis and output the JSON object only, with no extra prose."
-                ),
             )
             write_json(run_dir / "04-error-diagnosis-raw.json", llm_out)
             parsed = try_parse_json_value(str(llm_out.get("rawText") or ""))
@@ -2908,6 +3017,61 @@ def _panel_analysis_entry_is_newer(candidate: dict[str, Any], existing: dict[str
     return end_a > end_b
 
 
+def _iter_panel_analysis_entries_for_subtask(
+    session_id: str,
+    subtask_id: str,
+) -> list[dict[str, Any]]:
+    session_id = str(session_id or "").strip()
+    subtask_id = str(subtask_id or "").strip()
+    if not session_id or not subtask_id:
+        return []
+    index = _load_error_diagnosis_index()
+    diagnoses = index.get("diagnoses") if isinstance(index.get("diagnoses"), dict) else {}
+    out: list[dict[str, Any]] = []
+    for entry in diagnoses.values():
+        if not isinstance(entry, dict):
+            continue
+        if str(entry.get("sessionId") or "").strip() != session_id:
+            continue
+        if str(entry.get("subtaskId") or "").strip() != subtask_id:
+            continue
+        out.append(entry)
+    return out
+
+
+def find_panel_analysis_for_subtask(
+    session_id: str,
+    subtask_id: str,
+) -> dict[str, Any] | None:
+    """Return the durable mark for a panel: prefer ok, else fresh running.
+
+    Once a subtask has an ok summary, later requests must reuse it even if the
+    action signature drifts (child sessions / timing fields).
+    """
+    entries = _iter_panel_analysis_entries_for_subtask(session_id, subtask_id)
+    if not entries:
+        return None
+    ok_entries = [e for e in entries if str(e.get("status") or "") == "ok"]
+    if ok_entries:
+        best = ok_entries[0]
+        for e in ok_entries[1:]:
+            if _panel_analysis_entry_is_newer(e, best):
+                best = e
+        return {**best, "cached": True}
+    running_entries = [
+        e
+        for e in entries
+        if str(e.get("status") or "") == "running" and _error_diagnosis_running_is_fresh(e)
+    ]
+    if running_entries:
+        best = running_entries[0]
+        for e in running_entries[1:]:
+            if _panel_analysis_entry_is_newer(e, best):
+                best = e
+        return {**best, "cached": True}
+    return None
+
+
 def panel_analysis_for_session(session_id: str) -> dict[str, Any]:
     session_id = str(session_id or "").strip()
     if not session_id:
@@ -2939,6 +3103,7 @@ def build_current_stop_error_diagnosis(
     directory_override: str | None,
     parent_session_id: str | None,
 ) -> dict[str, Any]:
+    """Legacy helper: diagnose every subtask in the stop turn. Prefer run_panel_analysis_for_subtask."""
     trace = trace_parser.build_session_trace_bundle(
         messages=messages,
         primary_end_assistant_message_id=end_msg_id,
@@ -2954,6 +3119,78 @@ def build_current_stop_error_diagnosis(
         directory_override=directory_override,
         parent_session_id=parent_session_id,
     )
+
+
+def run_panel_analysis_for_subtask(
+    messages: list[dict[str, Any]],
+    session_id: str,
+    subtask_id: str,
+    directory_override: str | None,
+    parent_session_id: str | None,
+) -> dict[str, Any]:
+    """Run Trace summary / error diagnosis for one sealed panel, independent of ingest."""
+    session_id = str(session_id or "").strip()
+    subtask_id = str(subtask_id or "").strip()
+    if not session_id or not subtask_id:
+        return {"ok": False, "error": "sessionId and subtaskId are required", "count": 0, "items": []}
+
+    if is_mw_internal_session(session_id, directory=directory_override):
+        print(
+            "[memory-worker] panel-analysis.skip mw-internal "
+            f"sessionId={session_id} subtaskId={subtask_id}"
+        )
+        return {
+            "ok": True,
+            "count": 0,
+            "items": [],
+            "skipped": True,
+            "reason": "mw_internal_session",
+            "sessionId": session_id,
+            "subtaskId": subtask_id,
+        }
+
+    # Durable mark: one successful summary per panel (sessionId + subtaskId).
+    existing = find_panel_analysis_for_subtask(session_id, subtask_id)
+    if existing:
+        print(
+            "[memory-worker] panel-analysis.cache-hit "
+            f"sessionId={session_id} subtaskId={subtask_id} status={existing.get('status')} "
+            f"signature={existing.get('signatureHash') or ''}"
+        )
+        return {
+            "ok": True,
+            "count": 1,
+            "items": [existing],
+            "sessionId": session_id,
+            "subtaskId": subtask_id,
+            "cached": True,
+        }
+
+    trace = trace_parser.build_subtask_panel_trace(
+        messages=messages,
+        subtask_id=subtask_id,
+        session={"id": session_id, "directory": directory_override},
+        directory=directory_override,
+        fetch_messages=opencode_get_messages,
+    )
+    if not trace:
+        return {
+            "ok": False,
+            "error": "panel_trace_not_available",
+            "reason": "panel_trace_not_available",
+            "count": 0,
+            "items": [],
+            "sessionId": session_id,
+            "subtaskId": subtask_id,
+        }
+    result = run_error_diagnosis_for_trace(
+        trace,
+        directory_override=directory_override,
+        parent_session_id=parent_session_id or session_id,
+    )
+    result["sessionId"] = session_id
+    result["subtaskId"] = subtask_id
+    return result
 
 
 def build_task_switch_run_dir(session_id: str, end_assistant_message_id: str) -> Path:
@@ -2997,6 +3234,14 @@ def _complete_task_switch_extraction(
                 },
             )
             append_log(switch_log_file, "task_switch.extraction.failed", {"reason": "trace_build_failed"})
+            failed_segment = _task_segment_summary(previous_task_turns)
+            if failed_segment.get("taskId"):
+                mark_task_skill_status(
+                    session_id,
+                    failed_segment,
+                    status="none",
+                    error="trace_build_failed",
+                )
             return
 
         if fork_meta:
@@ -3083,6 +3328,17 @@ def _complete_task_switch_extraction(
     except Exception as e:
         append_log(switch_log_file, "task_switch.extraction.failed", {"error": str(e)})
         write_json(switch_run_dir / "04-pipeline-result.json", {"ok": False, "error": str(e)})
+        try:
+            failed_segment = _task_segment_summary(previous_task_turns)
+            if failed_segment.get("taskId"):
+                mark_task_skill_status(
+                    session_id,
+                    failed_segment,
+                    status="error",
+                    error=str(e),
+                )
+        except Exception:
+            pass
 
 
 def _message_index_by_id(messages: list[dict[str, Any]], message_id: str) -> int:
@@ -3679,6 +3935,18 @@ def _run_user_prompt_task_switch_worker(
         task_switched=True,
         task_switch_run_dir=str(switch_run_dir),
     )
+    if extracted_segment.get("taskId"):
+        mark_task_skill_status(
+            session_id,
+            extracted_segment,
+            status="distilling",
+            pipeline_run_dir="",
+        )
+        append_log(
+            switch_log_file,
+            "task_switch.skill_index.distilling",
+            {"taskId": extracted_segment.get("taskId")},
+        )
 
     threading.Thread(
         target=_complete_task_switch_extraction,
@@ -3733,31 +4001,8 @@ def process_reference_ingest_with_task_switch(
         "task_switch.ingest.start",
         {"sessionId": session_id, "endAssistantMessageId": end_msg_id, "sessionKey": session_key},
     )
-    try:
-        current_error_diagnosis = build_current_stop_error_diagnosis(
-            messages,
-            session_id,
-            end_msg_id,
-            directory_override,
-            parent_session_id,
-        )
-        write_json(switch_run_dir / "00b-current-error-diagnosis.json", current_error_diagnosis)
-        append_log(
-            switch_log_file,
-            "error_diagnosis.current_stop.done",
-            {
-                "count": current_error_diagnosis.get("count"),
-                "itemCount": len(current_error_diagnosis.get("items") or []),
-            },
-        )
-    except Exception as e:
-        current_error_diagnosis = {"ok": False, "error": str(e), "count": 0, "items": []}
-        write_json(switch_run_dir / "00b-current-error-diagnosis.json", current_error_diagnosis)
-        append_log(switch_log_file, "error_diagnosis.current_stop.failed", {"error": str(e)})
-
-    def with_current_error_diagnosis(result: dict[str, Any]) -> dict[str, Any]:
-        result["errorDiagnosis"] = current_error_diagnosis
-        return result
+    # Panel Trace summary / error diagnosis is triggered separately via POST /panel-analysis
+    # when each subtask panel seals — not mixed into ingest / task-switch.
 
     with _task_switch_lock:
         state = _load_task_switch_state()
@@ -3787,14 +4032,14 @@ def process_reference_ingest_with_task_switch(
                 },
             )
             append_log(switch_log_file, "task_switch.skip", {"reason": "duplicate_pending_turn", "pendingTurnCount": len(pending_turns)})
-            return with_current_error_diagnosis(_skip_ingest_response(
+            return _skip_ingest_response(
                 "duplicate_pending_turn",
                 session_id,
                 current_turn,
                 pending_turns,
                 {"runDir": str(switch_run_dir), "decision": None},
                 directory_override=directory_override,
-            ))
+            )
         in_flight_turn = session_state.get("inFlightTurn") if isinstance(session_state, dict) else None
         if isinstance(in_flight_turn, dict) and _same_user_prompt(
             str(in_flight_turn.get("userInput") or ""),
@@ -3826,7 +4071,7 @@ def process_reference_ingest_with_task_switch(
                         "task_switch.skip",
                         {"reason": "in_flight_prompt_completed_without_judge", "pendingTurnCount": len(next_pending)},
                     )
-                    return with_current_error_diagnosis(_skip_ingest_response(
+                    return _skip_ingest_response(
                         "in_flight_prompt_completed_without_judge",
                         session_id,
                         current_turn,
@@ -3837,7 +4082,7 @@ def process_reference_ingest_with_task_switch(
                             "decision": None,
                         },
                         directory_override=directory_override,
-                    ))
+                    )
 
                 sessions[session_key] = {
                     **session_state,
@@ -3864,7 +4109,7 @@ def process_reference_ingest_with_task_switch(
                     "task_switch.skip",
                     {"reason": "early_prompt_judge_running", "pendingTurnCount": len(pending_turns)},
                 )
-                return with_current_error_diagnosis(_skip_ingest_response(
+                return _skip_ingest_response(
                     "early_prompt_judge_running",
                     session_id,
                     current_turn,
@@ -3875,7 +4120,7 @@ def process_reference_ingest_with_task_switch(
                         "decision": None,
                     },
                     directory_override=directory_override,
-                ))
+                )
 
             early_decision = early_switch.get("decision") if isinstance(early_switch, dict) and isinstance(early_switch.get("decision"), dict) else {}
             task_switched = bool(early_decision.get("task_switched"))
@@ -3922,7 +4167,7 @@ def process_reference_ingest_with_task_switch(
                     "extractedTurnCount": len(extracted_turns),
                 },
             )
-            return with_current_error_diagnosis(_skip_ingest_response(
+            return _skip_ingest_response(
                 "early_prompt_already_classified",
                 session_id,
                 current_turn,
@@ -3937,7 +4182,7 @@ def process_reference_ingest_with_task_switch(
                 extracted_turns=extracted_turns if task_switched else None,
                 extracted_brief=_task_brief_from_decision(early_decision, "previous") if task_switched else None,
                 pending_brief=_task_brief_from_decision(early_decision, "current"),
-            ))
+            )
         if not pending_turns:
             next_pending = [current_turn]
             sessions[session_key] = {
@@ -3957,14 +4202,14 @@ def process_reference_ingest_with_task_switch(
                 },
             )
             append_log(switch_log_file, "task_switch.skip", {"reason": "first_turn_waiting_for_next_prompt", "pendingTurnCount": len(next_pending)})
-            return with_current_error_diagnosis(_skip_ingest_response(
+            return _skip_ingest_response(
                 "first_turn_waiting_for_next_prompt",
                 session_id,
                 current_turn,
                 next_pending,
                 {"runDir": str(switch_run_dir), "decision": None},
                 directory_override=directory_override,
-            ))
+            )
 
         # Turn completed without a matching in-flight prompt (e.g. page reload). Append only — never re-judge.
         next_pending = _dedupe_turn_records([*pending_turns, current_turn]) if pending_turns else [current_turn]
@@ -3989,14 +4234,14 @@ def process_reference_ingest_with_task_switch(
             "turn_completed.append_pending",
             {"pendingTurnCount": len(next_pending), "note": "no task switch judge on ingest"},
         )
-        return with_current_error_diagnosis(_skip_ingest_response(
+        return _skip_ingest_response(
             "turn_completed_append_pending",
             session_id,
             current_turn,
             next_pending,
             {"runDir": str(switch_run_dir), "decision": None},
             directory_override=directory_override,
-        ))
+        )
 
 
 def extract_skill_fields(skill_md: str, default_name: str) -> tuple[str, str]:
@@ -4165,8 +4410,31 @@ def opencode_get_messages(session_id: str, directory: str | None = None) -> list
     return data if isinstance(data, list) else []
 
 
-def opencode_send_message(session_id: str, text: str, directory: str | None = None) -> None:
-    body = {"parts": [{"type": "text", "text": text}]}
+def parse_model_ref_to_body(ref: str) -> dict[str, str]:
+    """Parse `providerID/modelID` into OpenCode message body.model shape."""
+    t = (ref or "").strip()
+    i = t.find("/")
+    if i <= 0 or i >= len(t) - 1:
+        raise ValueError(f"Invalid model ref (expected providerID/modelID): {ref!r}")
+    provider_id = t[:i].strip()
+    model_id = t[i + 1 :].strip()
+    if not provider_id or not model_id:
+        raise ValueError(f"Invalid model ref (expected providerID/modelID): {ref!r}")
+    return {"providerID": provider_id, "modelID": model_id}
+
+
+def opencode_send_message(
+    session_id: str,
+    text: str,
+    directory: str | None = None,
+    *,
+    model: str | None = None,
+) -> None:
+    model_ref = (model or "").strip() or MW_DEFAULT_MODEL_REF
+    body = {
+        "parts": [{"type": "text", "text": text}],
+        "model": parse_model_ref_to_body(model_ref),
+    }
     status, raw = opencode_request(
         "POST",
         f"/session/{session_id}/message",
@@ -4196,88 +4464,103 @@ def opencode_generate_text(
     directory: str | None = None,
     parent_session_id: str | None = None,
     *,
-    retry_in_session_on_timeout: bool = False,
+    model: str | None = None,
+    retry_with_new_session: bool = False,
     max_attempts: int | None = None,
+    # Deprecated aliases kept so older call sites / hot-reload don't break mid-edit.
+    retry_in_session_on_timeout: bool | None = None,
     retry_prompt: str | None = None,
 ) -> dict[str, Any]:
-    attempts_limit = max_attempts if max_attempts is not None else (MW_ANALYZER_SESSION_ATTEMPTS if retry_in_session_on_timeout else 1)
-    continue_prompt = (retry_prompt or ANALYZER_IN_SESSION_RETRY_PROMPT).strip()
-
-    append_log(log_file, f"{phase}.session.create.start", {})
-    session = opencode_create_session(
-        directory=directory,
-        parent_session_id=parent_session_id,
-        internal_label=phase,
-    )
-    write_json(run_dir / f"{phase}-session.json", session)
-    session_id = str(session.get("id") or "")
-    append_log(
-        log_file,
-        f"{phase}.session.create.ok",
-        {
-            "sessionID": session_id,
-            "directory": directory or OPENCODE_DIRECTORY,
-            "parentSessionID": parent_session_id or "",
-            "maxAttempts": attempts_limit,
-            "messageTimeoutSec": MW_OPENCODE_MESSAGE_TIMEOUT_SEC,
-            "waitStopTimeoutSec": MW_ANALYZER_WAIT_PER_ATTEMPT_SEC,
-        },
+    del retry_prompt  # new-session retries always resend the original prompt
+    if retry_in_session_on_timeout is not None:
+        retry_with_new_session = bool(retry_in_session_on_timeout)
+    model_ref = (model or "").strip() or MW_DEFAULT_MODEL_REF
+    attempts_limit = (
+        max_attempts
+        if max_attempts is not None
+        else (MW_ANALYZER_SESSION_ATTEMPTS if retry_with_new_session else 1)
     )
 
-    last_timeout: RuntimeError | None = None
+    last_error: Exception | None = None
     assistant: dict[str, Any] | None = None
+    session: dict[str, Any] | None = None
 
     for attempt in range(1, attempts_limit + 1):
-        before_ids = _assistant_message_ids(opencode_get_messages(session_id, directory=directory))
-        user_text = prompt if attempt == 1 else continue_prompt
+        append_log(
+            log_file,
+            f"{phase}.session.create.start",
+            {"attempt": attempt, "maxAttempts": attempts_limit, "isRetry": attempt > 1},
+        )
+        session = opencode_create_session(
+            directory=directory,
+            parent_session_id=parent_session_id,
+            internal_label=phase if attempt == 1 else f"{phase}-retry{attempt}",
+        )
+        session_id = str(session.get("id") or "")
+        write_json(run_dir / f"{phase}-session.json", session)
+        if attempt > 1:
+            write_json(run_dir / f"{phase}-session-attempt{attempt}.json", session)
+        append_log(
+            log_file,
+            f"{phase}.session.create.ok",
+            {
+                "sessionID": session_id,
+                "directory": directory or OPENCODE_DIRECTORY,
+                "parentSessionID": parent_session_id or "",
+                "attempt": attempt,
+                "maxAttempts": attempts_limit,
+                "model": model_ref,
+                "messageTimeoutSec": MW_OPENCODE_MESSAGE_TIMEOUT_SEC,
+                "waitStopTimeoutSec": MW_ANALYZER_WAIT_PER_ATTEMPT_SEC,
+            },
+        )
         append_log(
             log_file,
             f"{phase}.attempt.start",
-            {"attempt": attempt, "maxAttempts": attempts_limit, "isRetry": attempt > 1},
+            {
+                "attempt": attempt,
+                "maxAttempts": attempts_limit,
+                "isRetry": attempt > 1,
+                "sessionID": session_id,
+                "model": model_ref,
+            },
         )
+
         try:
-            opencode_send_message(session_id, user_text, directory=directory)
-        except RuntimeError as e:
+            before_ids = _assistant_message_ids(opencode_get_messages(session_id, directory=directory))
+            opencode_send_message(session_id, prompt, directory=directory, model=model_ref)
             append_log(
                 log_file,
-                f"{phase}.message.send.failed",
-                {
-                    "sessionID": session_id,
-                    "attempt": attempt,
-                    "error": str(e),
-                    "messageTimeoutSec": MW_OPENCODE_MESSAGE_TIMEOUT_SEC,
-                },
+                f"{phase}.message.send.ok",
+                {"sessionID": session_id, "attempt": attempt, "model": model_ref},
             )
-            raise RuntimeError(
-                f"{phase} message send failed (HTTP wait up to {MW_OPENCODE_MESSAGE_TIMEOUT_SEC}s): {e}"
-            ) from e
-        append_log(log_file, f"{phase}.message.send.ok", {"sessionID": session_id, "attempt": attempt})
-        try:
             assistant = wait_assistant_stop_message(session_id, before_ids, directory=directory)
             append_log(log_file, f"{phase}.wait.stop.ok", {"sessionID": session_id, "attempt": attempt})
             break
         except RuntimeError as e:
-            if "timeout" not in str(e).lower():
-                raise
-            last_timeout = e
+            last_error = e
+            can_retry = retry_with_new_session and attempt < attempts_limit
             append_log(
                 log_file,
-                f"{phase}.wait.timeout",
+                f"{phase}.attempt.failed",
                 {
                     "sessionID": session_id,
                     "attempt": attempt,
+                    "maxAttempts": attempts_limit,
+                    "error": str(e),
+                    "willRetryWithNewSession": can_retry,
+                    "model": model_ref,
                     "waitStopTimeoutSec": MW_ANALYZER_WAIT_PER_ATTEMPT_SEC,
-                    "willRetryInSession": retry_in_session_on_timeout and attempt < attempts_limit,
+                    "messageTimeoutSec": MW_OPENCODE_MESSAGE_TIMEOUT_SEC,
                 },
             )
-            if not retry_in_session_on_timeout or attempt >= attempts_limit:
+            if not can_retry:
                 raise RuntimeError(
-                    f"{phase} wait for assistant stop timed out after {MW_ANALYZER_WAIT_PER_ATTEMPT_SEC}s "
-                    f"({attempts_limit} attempt(s) exhausted)"
+                    f"{phase} failed after {attempt} attempt(s): {e}"
                 ) from e
 
-    if assistant is None:
-        raise last_timeout or RuntimeError("timeout waiting assistant stop message")
+    if assistant is None or session is None:
+        raise last_error or RuntimeError(f"{phase} failed with no assistant response")
 
     write_json(run_dir / f"{phase}-assistant-message.json", assistant)
     raw_text = extract_assistant_text(assistant)
@@ -4548,6 +4831,166 @@ def normalize_guidance_actions(suggestion: dict[str, Any]) -> list[dict[str, str
     return out
 
 
+def _normalize_writer_rel_path(raw: str) -> str | None:
+    rel = str(raw or "").strip().replace("\\", "/").lstrip("/")
+    if not rel or rel in {".", ".."} or ".." in rel.split("/"):
+        return None
+    return rel
+
+
+def _delete_path_under_root(root: Path, rel: str) -> bool:
+    out = root / rel
+    try:
+        out.relative_to(root)
+    except Exception:
+        return False
+    if not out.exists():
+        return False
+    if out.is_dir():
+        for p in sorted(out.rglob("*"), reverse=True):
+            if p.is_file():
+                p.unlink(missing_ok=True)
+            elif p.is_dir():
+                try:
+                    p.rmdir()
+                except OSError:
+                    pass
+        try:
+            out.rmdir()
+        except OSError:
+            return False
+    else:
+        out.unlink(missing_ok=True)
+    return True
+
+
+def _seed_target_from_source_bundle(
+    target_dir: Path,
+    source_bundle: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    created: list[dict[str, Any]] = []
+    for item in source_bundle:
+        if not isinstance(item, dict):
+            continue
+        rel = _normalize_writer_rel_path(str(item.get("relative_path") or ""))
+        content = item.get("content")
+        if not rel or not isinstance(content, str):
+            continue
+        out = target_dir / rel
+        if out.exists():
+            continue
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(content, encoding="utf-8")
+        created.append({"path": str(out), "reason": "seeded from source_skill_bundle"})
+    return created
+
+
+def _extract_writer_files_from_model(
+    parsed: dict[str, Any] | None,
+) -> tuple[list[dict[str, str]], list[str]]:
+    """Return (files[{path,content,operation}], deleted_paths) from writer LLM JSON."""
+    if not isinstance(parsed, dict):
+        return [], []
+    files_out: list[dict[str, str]] = []
+    deleted: list[str] = []
+
+    raw_files = parsed.get("files")
+    if isinstance(raw_files, list):
+        for item in raw_files:
+            if not isinstance(item, dict):
+                continue
+            rel = _normalize_writer_rel_path(str(item.get("path") or item.get("relative_path") or ""))
+            content = item.get("content")
+            op = str(item.get("operation") or item.get("action") or "UPDATE").upper()
+            if not rel:
+                continue
+            if op == "DELETE":
+                deleted.append(rel)
+                continue
+            if isinstance(content, str) and content.strip():
+                files_out.append({"path": rel, "content": content, "operation": op or "UPDATE"})
+
+    # Convenience: top-level skill_md string
+    skill_md = parsed.get("skill_md") or parsed.get("skillMd")
+    if isinstance(skill_md, str) and skill_md.strip():
+        if not any(f.get("path") == "SKILL.md" for f in files_out):
+            files_out.insert(0, {"path": "SKILL.md", "content": skill_md, "operation": "UPDATE"})
+
+    raw_deleted = parsed.get("deleted")
+    if isinstance(raw_deleted, list):
+        for item in raw_deleted:
+            rel = _normalize_writer_rel_path(str(item or ""))
+            if rel:
+                deleted.append(rel)
+
+    # Legacy applied_actions with optional content
+    applied = parsed.get("applied_actions")
+    if isinstance(applied, list):
+        for item in applied:
+            if not isinstance(item, dict):
+                continue
+            rel = _normalize_writer_rel_path(str(item.get("path") or ""))
+            op = str(item.get("operation") or "").upper()
+            content = item.get("content")
+            if not rel:
+                continue
+            if op == "DELETE":
+                deleted.append(rel)
+            elif isinstance(content, str) and content.strip():
+                if not any(f.get("path") == rel for f in files_out):
+                    files_out.append({"path": rel, "content": content, "operation": op or "UPDATE"})
+
+    # de-dupe deleted while preserving order
+    seen_del: set[str] = set()
+    deleted_unique: list[str] = []
+    for rel in deleted:
+        if rel in seen_del:
+            continue
+        seen_del.add(rel)
+        deleted_unique.append(rel)
+    return files_out, deleted_unique
+
+
+def _apply_writer_files_to_disk(
+    target_dir: Path,
+    files: list[dict[str, str]],
+    deleted: list[str],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    created: list[dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = []
+    for rel in deleted:
+        try:
+            if _delete_path_under_root(target_dir, rel):
+                created.append({"path": str(target_dir / rel), "reason": "deleted by writer content payload"})
+        except Exception as e:
+            warnings.append({"relative_path": rel, "reason": f"delete failed: {e}"})
+    for item in files:
+        rel = _normalize_writer_rel_path(str(item.get("path") or ""))
+        content = item.get("content")
+        if not rel or not isinstance(content, str):
+            continue
+        if rel.endswith("/"):
+            try:
+                (target_dir / rel).mkdir(parents=True, exist_ok=True)
+                created.append({"path": str(target_dir / rel), "reason": "folder from writer content payload"})
+            except Exception as e:
+                warnings.append({"relative_path": rel, "reason": f"mkdir failed: {e}"})
+            continue
+        try:
+            out = target_dir / rel
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(content, encoding="utf-8")
+            created.append(
+                {
+                    "path": str(out),
+                    "reason": f"written by memory_worker from model ({item.get('operation') or 'UPDATE'})",
+                }
+            )
+        except Exception as e:
+            warnings.append({"relative_path": rel, "reason": f"write failed: {e}"})
+    return created, warnings
+
+
 def run_writer(
     suggestion: dict[str, Any],
     writer_prompt: str,
@@ -4556,6 +4999,11 @@ def run_writer(
     directory: str | None = None,
     parent_session_id: str | None = None,
 ) -> dict[str, Any]:
+    """Generate skill content via OpenCode (text only), then persist with memory_worker.
+
+    OpenCode must not write files — worker disk writes feed Skill Panel registration
+    through the existing writerResults → register_task_skill_result path.
+    """
     operation = str(suggestion.get("operation") or "NONE").upper()
     if operation == "NONE":
         append_log(log_file, "writer.skip", {"reason": "operation=NONE"})
@@ -4567,7 +5015,7 @@ def run_writer(
 
     target_dir = SKILL_WRITE_ROOT / skill_name
     target_dir.mkdir(parents=True, exist_ok=True)
-    append_log(log_file, "writer.target.ready", {"targetDir": str(target_dir)})
+    append_log(log_file, "writer.target.ready", {"targetDir": str(target_dir), "diskWriter": "memory_worker"})
 
     source_bundle: list[dict[str, Any]] = []
     source_path_raw = str(suggestion.get("source_skill_absolute_path") or "").strip()
@@ -4578,22 +5026,36 @@ def run_writer(
         source_bundle = read_source_skill_bundle(source_root)
         write_json(run_dir / "06a-source-skill-bundle.json", source_bundle)
         append_log(log_file, "writer.source.loaded", {"sourcePath": source_path_raw, "files": len(source_bundle)})
+        try:
+            same_root = source_root.expanduser().resolve() == target_dir.expanduser().resolve()
+        except Exception:
+            same_root = False
+        if not same_root and source_bundle:
+            # Seed copy so UPDATE can start from prior skill when write root differs.
+            seeded = _seed_target_from_source_bundle(target_dir, source_bundle)
+            if seeded:
+                append_log(log_file, "writer.target.seeded", {"count": len(seeded)})
+
     created_files: list[dict[str, Any]] = []
     write_warnings: list[dict[str, Any]] = []
     writer_session: dict[str, Any] | None = None
-
     writer_mode_effective = MW_WRITER_MODE
     writer_model_summary: dict[str, Any] = {}
-    if MW_WRITER_MODE == "opencode":
+    model_wrote_skill_md = False
+
+    if MW_WRITER_MODE in {"opencode", "opencode_content", "llm"}:
         writer_input = {
             "suggestion": suggestion,
             "source_skill_bundle": source_bundle,
             "target_root": str(target_dir),
+            "disk_writer": "memory_worker",
         }
         writer_llm_prompt = (
             f"{writer_prompt}\n\n"
-            "Execute the real changes now. Operate only under target_root. When done, output the agreed JSON.\n\n"
-            f"Input:\n{json.dumps(writer_input, ensure_ascii=False, indent=2)}"
+            "重要：不要使用任何工具，不要读写磁盘。"
+            "只根据输入生成完整文件内容，输出约定 JSON；"
+            "memory_worker 会负责落盘。\n\n"
+            f"输入：\n{json.dumps(writer_input, ensure_ascii=False, indent=2)}"
         )
         try:
             llm_out = opencode_generate_text(
@@ -4610,11 +5072,30 @@ def run_writer(
             write_json(run_dir / "06d-writer-parsed.json", parsed or {})
             if isinstance(parsed, dict):
                 writer_model_summary = parsed
-
-            # collect file tree after agent action as observable write result
-            for p in target_dir.rglob("*"):
-                if p.is_file():
-                    created_files.append({"path": str(p), "reason": "writer agent output (observed)"})
+            files_payload, deleted_payload = _extract_writer_files_from_model(parsed if isinstance(parsed, dict) else None)
+            if files_payload or deleted_payload:
+                applied, warns = _apply_writer_files_to_disk(target_dir, files_payload, deleted_payload)
+                created_files.extend(applied)
+                write_warnings.extend(warns)
+                model_wrote_skill_md = any(
+                    str(x.get("path") or "").endswith("SKILL.md") for x in applied
+                )
+                writer_mode_effective = "opencode_worker_disk"
+                append_log(
+                    log_file,
+                    "writer.disk.apply.ok",
+                    {
+                        "fileCount": len(files_payload),
+                        "deletedCount": len(deleted_payload),
+                        "appliedCount": len(applied),
+                    },
+                )
+            else:
+                writer_mode_effective = "opencode_fallback_template"
+                write_warnings.append(
+                    {"relative_path": "", "reason": "opencode returned no writable file contents; using template"}
+                )
+                append_log(log_file, "writer.opencode.no_files", {"parsedKeys": list((parsed or {}).keys()) if isinstance(parsed, dict) else []})
         except Exception as e:
             writer_mode_effective = "opencode_fallback_template"
             write_warnings.append({"relative_path": "", "reason": f"opencode writer exception: {e}"})
@@ -4622,35 +5103,27 @@ def run_writer(
 
     guidance_actions = normalize_guidance_actions(suggestion)
 
-    if not created_files:
-        if writer_mode_effective == "opencode":
+    skill_md_path = target_dir / "SKILL.md"
+    if not model_wrote_skill_md or not skill_md_path.exists():
+        if writer_mode_effective in {"opencode", "opencode_content", "llm"}:
             writer_mode_effective = "opencode_fallback_template"
         skill_md = build_skill_md_content(suggestion, writer_prompt)
-        skill_md_path = target_dir / "SKILL.md"
         skill_md_path.write_text(skill_md, encoding="utf-8")
-        created_files = [{"path": str(skill_md_path), "reason": "main skill markdown"}]
+        created_files.append({"path": str(skill_md_path), "reason": "main skill markdown (memory_worker template)"})
+        append_log(log_file, "writer.disk.skill_md.template", {"path": str(skill_md_path)})
 
     for item in guidance_actions:
-        rel = str(item.get("relative_path") or "").strip().replace("\\", "/").lstrip("/")
+        rel = _normalize_writer_rel_path(str(item.get("relative_path") or ""))
         action = str(item.get("action") or "none").lower()
         guidance = str(item.get("guidance") or "")
-        if not rel or rel in {".", ".."} or ".." in rel.split("/"):
+        if not rel:
             continue
         if action in {"none", "keep"} or rel == "SKILL.md":
             continue
         try:
             out = target_dir / rel
             if action == "delete":
-                if out.exists():
-                    if out.is_dir():
-                        for p in sorted(out.rglob("*"), reverse=True):
-                            if p.is_file():
-                                p.unlink(missing_ok=True)
-                            elif p.is_dir():
-                                p.rmdir()
-                        out.rmdir()
-                    else:
-                        out.unlink(missing_ok=True)
+                if _delete_path_under_root(target_dir, rel):
                     created_files.append({"path": str(out), "reason": "deleted by guidance"})
                 continue
             if rel.endswith("/"):
@@ -4664,16 +5137,33 @@ def run_writer(
         except Exception as e:
             write_warnings.append({"relative_path": rel, "reason": f"guidance apply failed: {e}"})
 
+    if not skill_md_path.exists():
+        return {
+            "status": "failed",
+            "reason": "SKILL.md missing after worker disk write",
+            "mode": writer_mode_effective,
+            "operation": operation,
+            "skillName": skill_name,
+            "targetDir": str(target_dir),
+            "warnings": write_warnings,
+            "opencodeSession": writer_session or {},
+            "writerModelSummary": writer_model_summary,
+        }
+
     provenance = {
         "generatedAt": now_iso(),
         "operation": operation,
         "skill_name": skill_name,
         "source_skill_absolute_path": source_path_raw,
         "created_files": created_files,
+        "diskWriter": "memory_worker",
+        "writerMode": writer_mode_effective,
     }
     provenance_path = target_dir / "PROVENANCE.json"
     write_json(provenance_path, provenance)
     created_files.append({"path": str(provenance_path), "reason": "provenance"})
+    # Shape consumed by register_task_skill_result / Skill Panel:
+    # status + skillName + targetDir + operation must remain present.
     return {
         "status": "ok",
         "mode": writer_mode_effective,
@@ -4685,6 +5175,7 @@ def run_writer(
         "warnings": write_warnings,
         "opencodeSession": writer_session or {},
         "writerModelSummary": writer_model_summary,
+        "diskWriter": "memory_worker",
     }
 
 
@@ -4717,7 +5208,7 @@ def run_analyzer(
         "03a-analyzer",
         directory=directory,
         parent_session_id=parent_session_id,
-        retry_in_session_on_timeout=True,
+        retry_with_new_session=True,
         max_attempts=MW_ANALYZER_SESSION_ATTEMPTS,
     )
     raw_text = llm_out["rawText"]
@@ -4735,7 +5226,7 @@ def run_pipeline(trace: dict[str, Any], directory_override: str | None = None, p
     run_dir.mkdir(parents=True, exist_ok=True)
     log_file = run_dir / "00-run.log"
 
-    append_log(log_file, "pipeline.start", {"runId": run_id})
+    append_log(log_file, "pipeline.start", {"runId": run_id, "skillPipeline": MW_SKILL_PIPELINE})
     write_json(run_dir / "01-trace.json", trace)
     append_log(log_file, "trace.saved", {"tracePath": str(run_dir / "01-trace.json")})
 
@@ -4746,8 +5237,112 @@ def run_pipeline(trace: dict[str, Any], directory_override: str | None = None, p
     effective_directory = directory_override or trace_dir or OPENCODE_DIRECTORY
     pool_summary = build_pool_summary(Path(effective_directory))
     write_json(run_dir / "02-pool-summary.json", pool_summary)
-    append_log(log_file, "pool_summary.generated", {"skillCount": len(pool_summary.get("skills") or []), "effectiveDirectory": effective_directory})
+    append_log(
+        log_file,
+        "pool_summary.generated",
+        {
+            "skillCount": len(pool_summary.get("skills") or []),
+            "effectiveDirectory": effective_directory,
+        },
+    )
 
+    if MW_SKILL_PIPELINE in {"skill_evolve", "evolve", "vibetrace-skill"}:
+        return _run_skill_evolve_pipeline(
+            trace,
+            run_id=run_id,
+            run_dir=run_dir,
+            log_file=log_file,
+            effective_directory=effective_directory,
+            parent_session_id=parent_session_id,
+            pool_summary=pool_summary,
+        )
+
+    return _run_legacy_analyzer_writer_pipeline(
+        trace,
+        run_id=run_id,
+        run_dir=run_dir,
+        log_file=log_file,
+        effective_directory=effective_directory,
+        parent_session_id=parent_session_id,
+        pool_summary=pool_summary,
+    )
+
+
+def _run_skill_evolve_pipeline(
+    trace: dict[str, Any],
+    *,
+    run_id: str,
+    run_dir: Path,
+    log_file: Path,
+    effective_directory: str,
+    parent_session_id: str | None,
+    pool_summary: dict[str, Any],
+) -> dict[str, Any]:
+    try:
+        from skill_evolve import run_skill_evolve_pipeline
+    except Exception as e:
+        append_log(log_file, "skill_evolve.import.failed", {"error": str(e)})
+        return {
+            "ok": False,
+            "runId": run_id,
+            "runDir": str(run_dir),
+            "error": f"skill_evolve import failed: {e}",
+            "engine": "skill_evolve",
+        }
+
+    skill_roots = configured_skill_roots(Path(effective_directory))
+
+    def complete_provider(
+        prompt: str,
+        model: str,
+        timeout_sec: int,
+        variant: str | None,
+        label: str,
+    ) -> str:
+        # variant/timeout_sec unused on HTTP path; model must be explicit (never OpenCode user config).
+        del variant, timeout_sec
+        llm_out = opencode_generate_text(
+            prompt,
+            run_dir,
+            log_file,
+            label,
+            directory=effective_directory,
+            parent_session_id=parent_session_id,
+            model=(model or "").strip() or MW_DEFAULT_MODEL_REF,
+            retry_with_new_session=True,
+            max_attempts=MW_ANALYZER_SESSION_ATTEMPTS,
+        )
+        return str(llm_out.get("rawText") or "")
+
+    result = run_skill_evolve_pipeline(
+        trace,
+        run_dir=run_dir,
+        log_file=log_file,
+        skill_roots=skill_roots,
+        skill_write_root=SKILL_WRITE_ROOT,
+        write_json=write_json,
+        append_log=append_log,
+        complete_provider=complete_provider,
+        directory=effective_directory,
+        parent_session_id=parent_session_id,
+    )
+    # Keep pool summary path consistent for callers / UI debugging.
+    if not result.get("poolSummaryPath"):
+        result["poolSummaryPath"] = str(run_dir / "02-pool-summary.json")
+    result["poolSummary"] = pool_summary
+    return result
+
+
+def _run_legacy_analyzer_writer_pipeline(
+    trace: dict[str, Any],
+    *,
+    run_id: str,
+    run_dir: Path,
+    log_file: Path,
+    effective_directory: str,
+    parent_session_id: str | None,
+    pool_summary: dict[str, Any],
+) -> dict[str, Any]:
     try:
         analyzer_output = run_analyzer(
             trace,
@@ -4875,6 +5470,7 @@ def run_pipeline(trace: dict[str, Any], directory_override: str | None = None, p
         "parentSessionID": parent_session_id or "",
         "analyzerSessionID": analyzer_session_id,
         "writerSessionID": "",
+        "engine": "legacy",
     }
     writer_session_id = ""
     for item in writer_results:
@@ -4901,6 +5497,63 @@ def run_pipeline(trace: dict[str, Any], directory_override: str | None = None, p
         "writerResults": writer_results,
         "analyzerSessionID": analyzer_session_id,
         "writerSessionID": writer_session_id,
+        "engine": "legacy",
+    }
+
+
+# Per-workspace folder for always-on behavior reports (hand this folder back to researchers).
+EXPERIMENT_BEHAVIOR_DIRNAME = "vibetrace-behavior"
+
+
+def save_experiment_report(body: dict[str, Any]) -> dict[str, Any]:
+    """Write an experiment report JSON into {workspace}/vibetrace-behavior/.
+
+    Expected body: { directory: str, report: object, filename?: str }
+    """
+    directory = str(body.get("directory") or "").strip()
+    report = body.get("report")
+    if not directory:
+        return {"ok": False, "error": "directory is required"}
+    if report is None:
+        return {"ok": False, "error": "report is required"}
+
+    root = Path(directory).expanduser().resolve()
+    if not root.exists() or not root.is_dir():
+        return {"ok": False, "error": f"directory does not exist or is not a folder: {root}"}
+
+    out_dir = root / EXPERIMENT_BEHAVIOR_DIRNAME
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        return {"ok": False, "error": f"failed to create behavior folder: {e}"}
+
+    raw_name = str(body.get("filename") or "").strip()
+    if not raw_name:
+        participant = ""
+        if isinstance(report, dict):
+            participant = str(report.get("participantId") or "").strip()
+        safe_pid = re.sub(r"[^\w.-]+", "_", participant) or "participant"
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        raw_name = f"vibetrace-experiment-{safe_pid}-{stamp}.json"
+    # Prevent path traversal — filename only
+    filename = Path(raw_name).name
+    if not filename.endswith(".json"):
+        filename = f"{filename}.json"
+    if ".." in filename or "/" in filename or "\\" in filename:
+        return {"ok": False, "error": "invalid filename"}
+
+    target = out_dir / filename
+    try:
+        target.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    except OSError as e:
+        return {"ok": False, "error": f"failed to write report: {e}"}
+
+    print(f"[memory-worker] experiment-report saved path={target}")
+    return {
+        "ok": True,
+        "path": str(target),
+        "filename": filename,
+        "folder": EXPERIMENT_BEHAVIOR_DIRNAME,
     }
 
 
@@ -4915,13 +5568,24 @@ class AppHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
 
     def _send_json(self, status: int, body: dict[str, Any]) -> None:
+        """Write a JSON response. Client disconnect mid-write is logged, not raised.
+
+        Long /ingest-trace handlers (sync error-diagnosis) often outlive the browser
+        or Vite proxy; the work may already be done when BrokenPipe happens.
+        """
         payload = json.dumps(body, ensure_ascii=False, indent=2).encode("utf-8")
-        self.send_response(status)
-        self._set_common_headers()
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(payload)))
-        self.end_headers()
-        self.wfile.write(payload)
+        try:
+            self.send_response(status)
+            self._set_common_headers()
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError) as e:
+            print(
+                f"[memory-worker] client disconnected while sending HTTP {status} "
+                f"({type(e).__name__}); response body dropped"
+            )
 
     def _read_json(self) -> dict[str, Any]:
         length = int(self.headers.get("Content-Length", "0") or "0")
@@ -4945,6 +5609,7 @@ class AppHandler(BaseHTTPRequestHandler):
                     "opencodeDirectory": OPENCODE_DIRECTORY,
                     "skillWriteRoot": str(SKILL_WRITE_ROOT),
                     "analyzerMode": MW_ANALYZER_MODE,
+                    "skillPipeline": MW_SKILL_PIPELINE,
                     "taskSwitchMode": MW_TASK_SWITCH_MODE,
                     "taskSwitchContract": "segments.v1",
                     "taskSwitchStatePath": str(TASK_SWITCH_STATE_PATH),
@@ -4993,10 +5658,46 @@ class AppHandler(BaseHTTPRequestHandler):
         self._send_json(404, {"ok": False, "error": "Not found"})
 
     def do_POST(self) -> None:  # noqa: N802
+        if self.path == "/panel-analysis":
+            try:
+                body = self._read_json()
+                session_id = str(body.get("sessionId") or "").strip() if isinstance(body, dict) else ""
+                subtask_id = str(body.get("subtaskId") or "").strip() if isinstance(body, dict) else ""
+                directory_override = str(body.get("directory") or "").strip() or None if isinstance(body, dict) else None
+                parent_session_id = str(body.get("parentSessionID") or "").strip() or None if isinstance(body, dict) else None
+                if not session_id or not subtask_id:
+                    self._send_json(400, {"ok": False, "error": "sessionId and subtaskId are required", "count": 0, "items": []})
+                    return
+                print(
+                    "[memory-worker] panel-analysis "
+                    f"sessionId={session_id} subtaskId={subtask_id} directory={directory_override or ''}"
+                )
+                messages = opencode_get_messages(session_id, directory=directory_override)
+                result = run_panel_analysis_for_subtask(
+                    messages=messages,
+                    session_id=session_id,
+                    subtask_id=subtask_id,
+                    directory_override=directory_override,
+                    parent_session_id=parent_session_id,
+                )
+                self._send_json(200 if result.get("ok") else 400, result)
+            except Exception as e:
+                self._send_json(500, {"ok": False, "error": str(e), "count": 0, "items": []})
+            return
+
         if self.path == "/task-feedback-distill":
             try:
                 body = self._read_json()
                 result = distill_feedback_skill(body)
+                self._send_json(200 if result.get("ok") else 400, result)
+            except Exception as e:
+                self._send_json(500, {"ok": False, "error": str(e)})
+            return
+
+        if self.path == "/experiment-report":
+            try:
+                body = self._read_json()
+                result = save_experiment_report(body if isinstance(body, dict) else {})
                 self._send_json(200 if result.get("ok") else 400, result)
             except Exception as e:
                 self._send_json(500, {"ok": False, "error": str(e)})
@@ -5093,22 +5794,13 @@ class AppHandler(BaseHTTPRequestHandler):
             directory_override = str(body.get("directory") or "").strip() if isinstance(body, dict) else ""
             parent_session_id = str(body.get("parentSessionID") or "").strip() if isinstance(body, dict) else ""
             try:
-                error_diagnosis = run_error_diagnosis_for_trace(
-                    trace,
-                    directory_override=directory_override or None,
-                    parent_session_id=parent_session_id or None,
-                )
-            except Exception as diag_err:
-                error_diagnosis = {"ok": False, "error": str(diag_err), "count": 0, "items": []}
-            try:
                 result = run_pipeline_with_dedup(
                     trace,
                     directory_override=directory_override or None,
                     parent_session_id=parent_session_id or None,
                 )
-                result["errorDiagnosis"] = error_diagnosis
             except Exception as inner:
-                result = {"ok": False, "error": str(inner), "errorDiagnosis": error_diagnosis}
+                result = {"ok": False, "error": str(inner)}
             self._send_json(200, result)
         except Exception as e:
             self._send_json(500, {"ok": False, "error": str(e)})
@@ -5153,6 +5845,7 @@ def main() -> None:
     print(f"[memory-worker] MW_OPENCODE_MESSAGE_TIMEOUT_SEC={MW_OPENCODE_MESSAGE_TIMEOUT_SEC}")
     print(f"[memory-worker] MW_ANALYZER_WAIT_PER_ATTEMPT_SEC={MW_ANALYZER_WAIT_PER_ATTEMPT_SEC}")
     print(f"[memory-worker] MW_ANALYZER_SESSION_ATTEMPTS={MW_ANALYZER_SESSION_ATTEMPTS}")
+    print(f"[memory-worker] MW_DEFAULT_MODEL_REF={MW_DEFAULT_MODEL_REF}")
     print(f"[memory-worker] MW_WRITER_MODE={cfg.writer_mode}")
     print(f"[memory-worker] MW_SESSION_STRATEGY={cfg.session_strategy}")
     auth_on = bool(opencode_basic_auth_header())

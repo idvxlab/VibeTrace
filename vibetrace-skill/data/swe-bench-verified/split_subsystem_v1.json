@@ -1,0 +1,3869 @@
+{
+ "meta": {
+  "strategy": "cluster by repo + primary subsystem (from patch file paths); within cluster ~2/3 train, ~1/3 test; test tasks preferentially chosen to share a test file with a train task; singleton clusters go to train",
+  "seed": 42,
+  "n_train": 357,
+  "n_test": 143,
+  "test_core_high_transfer": "subset of test with >=3 same-cluster train siblings; use for a stricter transfer evaluation"
+ },
+ "train": [
+  "astropy__astropy-12907",
+  "astropy__astropy-13033",
+  "astropy__astropy-13236",
+  "astropy__astropy-13579",
+  "astropy__astropy-13977",
+  "astropy__astropy-14096",
+  "astropy__astropy-14182",
+  "astropy__astropy-14309",
+  "astropy__astropy-14365",
+  "astropy__astropy-14369",
+  "astropy__astropy-14508",
+  "astropy__astropy-14539",
+  "astropy__astropy-14995",
+  "astropy__astropy-7336",
+  "astropy__astropy-7606",
+  "astropy__astropy-7671",
+  "astropy__astropy-8707",
+  "django__django-10097",
+  "django__django-10999",
+  "django__django-11066",
+  "django__django-11087",
+  "django__django-11095",
+  "django__django-11099",
+  "django__django-11119",
+  "django__django-11133",
+  "django__django-11138",
+  "django__django-11149",
+  "django__django-11179",
+  "django__django-11206",
+  "django__django-11211",
+  "django__django-11239",
+  "django__django-11265",
+  "django__django-11299",
+  "django__django-11333",
+  "django__django-11400",
+  "django__django-11433",
+  "django__django-11490",
+  "django__django-11532",
+  "django__django-11555",
+  "django__django-11603",
+  "django__django-11728",
+  "django__django-11734",
+  "django__django-11740",
+  "django__django-11749",
+  "django__django-11790",
+  "django__django-11848",
+  "django__django-11880",
+  "django__django-11885",
+  "django__django-11951",
+  "django__django-11964",
+  "django__django-12050",
+  "django__django-12125",
+  "django__django-12143",
+  "django__django-12193",
+  "django__django-12262",
+  "django__django-12276",
+  "django__django-12308",
+  "django__django-12325",
+  "django__django-12406",
+  "django__django-12419",
+  "django__django-12663",
+  "django__django-12708",
+  "django__django-12713",
+  "django__django-12741",
+  "django__django-12754",
+  "django__django-12858",
+  "django__django-13089",
+  "django__django-13109",
+  "django__django-13121",
+  "django__django-13128",
+  "django__django-13158",
+  "django__django-13195",
+  "django__django-13212",
+  "django__django-13279",
+  "django__django-13297",
+  "django__django-13315",
+  "django__django-13343",
+  "django__django-13344",
+  "django__django-13346",
+  "django__django-13363",
+  "django__django-13401",
+  "django__django-13406",
+  "django__django-13410",
+  "django__django-13516",
+  "django__django-13551",
+  "django__django-13569",
+  "django__django-13590",
+  "django__django-13658",
+  "django__django-13670",
+  "django__django-13786",
+  "django__django-13794",
+  "django__django-13807",
+  "django__django-13809",
+  "django__django-13810",
+  "django__django-13821",
+  "django__django-13925",
+  "django__django-13933",
+  "django__django-13964",
+  "django__django-14007",
+  "django__django-14017",
+  "django__django-14053",
+  "django__django-14089",
+  "django__django-14122",
+  "django__django-14155",
+  "django__django-14170",
+  "django__django-14238",
+  "django__django-14311",
+  "django__django-14376",
+  "django__django-14404",
+  "django__django-14434",
+  "django__django-14534",
+  "django__django-14539",
+  "django__django-14580",
+  "django__django-14608",
+  "django__django-14672",
+  "django__django-14765",
+  "django__django-14771",
+  "django__django-14787",
+  "django__django-14792",
+  "django__django-14855",
+  "django__django-14915",
+  "django__django-14999",
+  "django__django-15022",
+  "django__django-15037",
+  "django__django-15098",
+  "django__django-15103",
+  "django__django-15104",
+  "django__django-15128",
+  "django__django-15252",
+  "django__django-15277",
+  "django__django-15315",
+  "django__django-15368",
+  "django__django-15375",
+  "django__django-15380",
+  "django__django-15382",
+  "django__django-15561",
+  "django__django-15563",
+  "django__django-15569",
+  "django__django-15572",
+  "django__django-15731",
+  "django__django-15732",
+  "django__django-15741",
+  "django__django-15851",
+  "django__django-15916",
+  "django__django-15930",
+  "django__django-15957",
+  "django__django-15973",
+  "django__django-16032",
+  "django__django-16082",
+  "django__django-16116",
+  "django__django-16136",
+  "django__django-16139",
+  "django__django-16255",
+  "django__django-16263",
+  "django__django-16333",
+  "django__django-16429",
+  "django__django-16454",
+  "django__django-16485",
+  "django__django-16493",
+  "django__django-16502",
+  "django__django-16527",
+  "django__django-16560",
+  "django__django-16569",
+  "django__django-16595",
+  "django__django-16631",
+  "django__django-16661",
+  "django__django-16662",
+  "django__django-16667",
+  "django__django-16801",
+  "django__django-16819",
+  "django__django-16877",
+  "django__django-16899",
+  "django__django-16901",
+  "django__django-16938",
+  "django__django-17029",
+  "django__django-17084",
+  "django__django-17087",
+  "django__django-9296",
+  "matplotlib__matplotlib-13989",
+  "matplotlib__matplotlib-14623",
+  "matplotlib__matplotlib-20676",
+  "matplotlib__matplotlib-20859",
+  "matplotlib__matplotlib-22865",
+  "matplotlib__matplotlib-22871",
+  "matplotlib__matplotlib-23299",
+  "matplotlib__matplotlib-23314",
+  "matplotlib__matplotlib-23412",
+  "matplotlib__matplotlib-24026",
+  "matplotlib__matplotlib-24149",
+  "matplotlib__matplotlib-24177",
+  "matplotlib__matplotlib-24570",
+  "matplotlib__matplotlib-24627",
+  "matplotlib__matplotlib-24970",
+  "matplotlib__matplotlib-25122",
+  "matplotlib__matplotlib-25287",
+  "matplotlib__matplotlib-25332",
+  "matplotlib__matplotlib-25775",
+  "matplotlib__matplotlib-25960",
+  "matplotlib__matplotlib-26113",
+  "matplotlib__matplotlib-26208",
+  "matplotlib__matplotlib-26342",
+  "mwaskom__seaborn-3069",
+  "pallets__flask-5014",
+  "psf__requests-1724",
+  "psf__requests-1766",
+  "psf__requests-1921",
+  "psf__requests-2931",
+  "psf__requests-5414",
+  "psf__requests-6028",
+  "pydata__xarray-3095",
+  "pydata__xarray-3151",
+  "pydata__xarray-3305",
+  "pydata__xarray-3993",
+  "pydata__xarray-4075",
+  "pydata__xarray-4356",
+  "pydata__xarray-4629",
+  "pydata__xarray-4966",
+  "pydata__xarray-6461",
+  "pydata__xarray-6599",
+  "pydata__xarray-6721",
+  "pydata__xarray-6744",
+  "pydata__xarray-6938",
+  "pydata__xarray-6992",
+  "pydata__xarray-7233",
+  "pylint-dev__pylint-4551",
+  "pylint-dev__pylint-4970",
+  "pylint-dev__pylint-6386",
+  "pylint-dev__pylint-6903",
+  "pylint-dev__pylint-7080",
+  "pylint-dev__pylint-7277",
+  "pylint-dev__pylint-8898",
+  "pytest-dev__pytest-10356",
+  "pytest-dev__pytest-5631",
+  "pytest-dev__pytest-5809",
+  "pytest-dev__pytest-5840",
+  "pytest-dev__pytest-6197",
+  "pytest-dev__pytest-7205",
+  "pytest-dev__pytest-7236",
+  "pytest-dev__pytest-7324",
+  "pytest-dev__pytest-7432",
+  "pytest-dev__pytest-7521",
+  "pytest-dev__pytest-7571",
+  "pytest-dev__pytest-7982",
+  "pytest-dev__pytest-8399",
+  "scikit-learn__scikit-learn-10297",
+  "scikit-learn__scikit-learn-10908",
+  "scikit-learn__scikit-learn-11310",
+  "scikit-learn__scikit-learn-11578",
+  "scikit-learn__scikit-learn-12682",
+  "scikit-learn__scikit-learn-12973",
+  "scikit-learn__scikit-learn-13135",
+  "scikit-learn__scikit-learn-13142",
+  "scikit-learn__scikit-learn-13328",
+  "scikit-learn__scikit-learn-13439",
+  "scikit-learn__scikit-learn-13496",
+  "scikit-learn__scikit-learn-13779",
+  "scikit-learn__scikit-learn-14053",
+  "scikit-learn__scikit-learn-14629",
+  "scikit-learn__scikit-learn-14710",
+  "scikit-learn__scikit-learn-14894",
+  "scikit-learn__scikit-learn-14983",
+  "scikit-learn__scikit-learn-25102",
+  "scikit-learn__scikit-learn-25232",
+  "scikit-learn__scikit-learn-25747",
+  "scikit-learn__scikit-learn-25973",
+  "scikit-learn__scikit-learn-26194",
+  "scikit-learn__scikit-learn-26323",
+  "scikit-learn__scikit-learn-9288",
+  "sphinx-doc__sphinx-10323",
+  "sphinx-doc__sphinx-10435",
+  "sphinx-doc__sphinx-10449",
+  "sphinx-doc__sphinx-10614",
+  "sphinx-doc__sphinx-10673",
+  "sphinx-doc__sphinx-11445",
+  "sphinx-doc__sphinx-7454",
+  "sphinx-doc__sphinx-7462",
+  "sphinx-doc__sphinx-7748",
+  "sphinx-doc__sphinx-7757",
+  "sphinx-doc__sphinx-7910",
+  "sphinx-doc__sphinx-7985",
+  "sphinx-doc__sphinx-8056",
+  "sphinx-doc__sphinx-8120",
+  "sphinx-doc__sphinx-8265",
+  "sphinx-doc__sphinx-8269",
+  "sphinx-doc__sphinx-8475",
+  "sphinx-doc__sphinx-8548",
+  "sphinx-doc__sphinx-8551",
+  "sphinx-doc__sphinx-8593",
+  "sphinx-doc__sphinx-8621",
+  "sphinx-doc__sphinx-8638",
+  "sphinx-doc__sphinx-9229",
+  "sphinx-doc__sphinx-9230",
+  "sphinx-doc__sphinx-9320",
+  "sphinx-doc__sphinx-9461",
+  "sphinx-doc__sphinx-9591",
+  "sphinx-doc__sphinx-9602",
+  "sphinx-doc__sphinx-9658",
+  "sphinx-doc__sphinx-9673",
+  "sphinx-doc__sphinx-9698",
+  "sphinx-doc__sphinx-9711",
+  "sympy__sympy-11618",
+  "sympy__sympy-12096",
+  "sympy__sympy-12489",
+  "sympy__sympy-13031",
+  "sympy__sympy-13091",
+  "sympy__sympy-13372",
+  "sympy__sympy-13480",
+  "sympy__sympy-13551",
+  "sympy__sympy-13647",
+  "sympy__sympy-13757",
+  "sympy__sympy-13798",
+  "sympy__sympy-13852",
+  "sympy__sympy-13877",
+  "sympy__sympy-13878",
+  "sympy__sympy-13974",
+  "sympy__sympy-14531",
+  "sympy__sympy-14711",
+  "sympy__sympy-14976",
+  "sympy__sympy-15017",
+  "sympy__sympy-15345",
+  "sympy__sympy-15349",
+  "sympy__sympy-15599",
+  "sympy__sympy-15875",
+  "sympy__sympy-15976",
+  "sympy__sympy-16597",
+  "sympy__sympy-16766",
+  "sympy__sympy-16792",
+  "sympy__sympy-16886",
+  "sympy__sympy-17139",
+  "sympy__sympy-17318",
+  "sympy__sympy-17630",
+  "sympy__sympy-17655",
+  "sympy__sympy-18189",
+  "sympy__sympy-18199",
+  "sympy__sympy-18211",
+  "sympy__sympy-18698",
+  "sympy__sympy-19040",
+  "sympy__sympy-19346",
+  "sympy__sympy-19495",
+  "sympy__sympy-19954",
+  "sympy__sympy-20154",
+  "sympy__sympy-20438",
+  "sympy__sympy-20590",
+  "sympy__sympy-20916",
+  "sympy__sympy-21596",
+  "sympy__sympy-21930",
+  "sympy__sympy-22080",
+  "sympy__sympy-22456",
+  "sympy__sympy-23413",
+  "sympy__sympy-23534",
+  "sympy__sympy-23824",
+  "sympy__sympy-23950",
+  "sympy__sympy-24213",
+  "sympy__sympy-24443",
+  "sympy__sympy-24539",
+  "sympy__sympy-24562",
+  "sympy__sympy-24661"
+ ],
+ "test": [
+  "astropy__astropy-13398",
+  "astropy__astropy-13453",
+  "astropy__astropy-14598",
+  "astropy__astropy-7166",
+  "astropy__astropy-8872",
+  "django__django-10554",
+  "django__django-10880",
+  "django__django-10914",
+  "django__django-10973",
+  "django__django-11141",
+  "django__django-11163",
+  "django__django-11276",
+  "django__django-11292",
+  "django__django-11451",
+  "django__django-11477",
+  "django__django-11551",
+  "django__django-11815",
+  "django__django-11820",
+  "django__django-11999",
+  "django__django-12039",
+  "django__django-12155",
+  "django__django-12209",
+  "django__django-12273",
+  "django__django-12304",
+  "django__django-12774",
+  "django__django-12965",
+  "django__django-13012",
+  "django__django-13023",
+  "django__django-13028",
+  "django__django-13033",
+  "django__django-13112",
+  "django__django-13417",
+  "django__django-13449",
+  "django__django-13512",
+  "django__django-13513",
+  "django__django-13568",
+  "django__django-13741",
+  "django__django-13820",
+  "django__django-13837",
+  "django__django-14011",
+  "django__django-14034",
+  "django__django-14140",
+  "django__django-14315",
+  "django__django-14349",
+  "django__django-14351",
+  "django__django-14373",
+  "django__django-14493",
+  "django__django-14500",
+  "django__django-14559",
+  "django__django-14631",
+  "django__django-14725",
+  "django__django-14752",
+  "django__django-15127",
+  "django__django-15161",
+  "django__django-15268",
+  "django__django-15278",
+  "django__django-15280",
+  "django__django-15467",
+  "django__django-15499",
+  "django__django-15503",
+  "django__django-15525",
+  "django__django-15554",
+  "django__django-15629",
+  "django__django-15695",
+  "django__django-15814",
+  "django__django-15863",
+  "django__django-15987",
+  "django__django-16100",
+  "django__django-16145",
+  "django__django-16256",
+  "django__django-16315",
+  "django__django-16612",
+  "django__django-16642",
+  "django__django-16950",
+  "django__django-7530",
+  "matplotlib__matplotlib-20488",
+  "matplotlib__matplotlib-20826",
+  "matplotlib__matplotlib-21568",
+  "matplotlib__matplotlib-22719",
+  "matplotlib__matplotlib-23476",
+  "matplotlib__matplotlib-24637",
+  "matplotlib__matplotlib-24870",
+  "matplotlib__matplotlib-25311",
+  "matplotlib__matplotlib-25479",
+  "matplotlib__matplotlib-26291",
+  "matplotlib__matplotlib-26466",
+  "mwaskom__seaborn-3187",
+  "psf__requests-1142",
+  "psf__requests-2317",
+  "pydata__xarray-2905",
+  "pydata__xarray-3677",
+  "pydata__xarray-4094",
+  "pydata__xarray-4687",
+  "pydata__xarray-4695",
+  "pydata__xarray-7229",
+  "pydata__xarray-7393",
+  "pylint-dev__pylint-4604",
+  "pylint-dev__pylint-4661",
+  "pylint-dev__pylint-6528",
+  "pytest-dev__pytest-10051",
+  "pytest-dev__pytest-10081",
+  "pytest-dev__pytest-5262",
+  "pytest-dev__pytest-5787",
+  "pytest-dev__pytest-6202",
+  "pytest-dev__pytest-7490",
+  "scikit-learn__scikit-learn-10844",
+  "scikit-learn__scikit-learn-12585",
+  "scikit-learn__scikit-learn-13124",
+  "scikit-learn__scikit-learn-14087",
+  "scikit-learn__scikit-learn-14141",
+  "scikit-learn__scikit-learn-14496",
+  "scikit-learn__scikit-learn-15100",
+  "scikit-learn__scikit-learn-25931",
+  "sphinx-doc__sphinx-10466",
+  "sphinx-doc__sphinx-11510",
+  "sphinx-doc__sphinx-7440",
+  "sphinx-doc__sphinx-7590",
+  "sphinx-doc__sphinx-7889",
+  "sphinx-doc__sphinx-8035",
+  "sphinx-doc__sphinx-8459",
+  "sphinx-doc__sphinx-8595",
+  "sphinx-doc__sphinx-8721",
+  "sphinx-doc__sphinx-9258",
+  "sphinx-doc__sphinx-9281",
+  "sphinx-doc__sphinx-9367",
+  "sympy__sympy-12419",
+  "sympy__sympy-12481",
+  "sympy__sympy-13615",
+  "sympy__sympy-14248",
+  "sympy__sympy-15809",
+  "sympy__sympy-16450",
+  "sympy__sympy-18763",
+  "sympy__sympy-19637",
+  "sympy__sympy-19783",
+  "sympy__sympy-20428",
+  "sympy__sympy-20801",
+  "sympy__sympy-21379",
+  "sympy__sympy-21612",
+  "sympy__sympy-21847",
+  "sympy__sympy-22714",
+  "sympy__sympy-22914",
+  "sympy__sympy-23262",
+  "sympy__sympy-24066"
+ ],
+ "clusters": {
+  "astropy/astropy|astropy/modeling": [
+   "astropy__astropy-12907"
+  ],
+  "astropy/astropy|astropy/timeseries": [
+   "astropy__astropy-13033"
+  ],
+  "astropy/astropy|astropy/table": [
+   "astropy__astropy-13236"
+  ],
+  "astropy/astropy|astropy/coordinates": [
+   "astropy__astropy-13398",
+   "astropy__astropy-14096"
+  ],
+  "astropy/astropy|astropy/io": [
+   "astropy__astropy-13453",
+   "astropy__astropy-14182",
+   "astropy__astropy-14309",
+   "astropy__astropy-14365",
+   "astropy__astropy-14508",
+   "astropy__astropy-14539",
+   "astropy__astropy-14598",
+   "astropy__astropy-8707"
+  ],
+  "astropy/astropy|astropy/wcs": [
+   "astropy__astropy-13579"
+  ],
+  "astropy/astropy|astropy/units": [
+   "astropy__astropy-13977",
+   "astropy__astropy-14369",
+   "astropy__astropy-7336",
+   "astropy__astropy-7606",
+   "astropy__astropy-8872"
+  ],
+  "astropy/astropy|astropy/nddata": [
+   "astropy__astropy-14995"
+  ],
+  "astropy/astropy|astropy/utils": [
+   "astropy__astropy-7166",
+   "astropy__astropy-7671"
+  ],
+  "django/django|core.validators": [
+   "django__django-10097",
+   "django__django-13212",
+   "django__django-14349"
+  ],
+  "django/django|db.models": [
+   "django__django-10554",
+   "django__django-10880",
+   "django__django-11087",
+   "django__django-11179",
+   "django__django-11211",
+   "django__django-11265",
+   "django__django-11299",
+   "django__django-11400",
+   "django__django-11490",
+   "django__django-11555",
+   "django__django-11603",
+   "django__django-11734",
+   "django__django-11820",
+   "django__django-11951",
+   "django__django-11964",
+   "django__django-11999",
+   "django__django-12050",
+   "django__django-12209",
+   "django__django-12273",
+   "django__django-12304",
+   "django__django-12325",
+   "django__django-12406",
+   "django__django-12663",
+   "django__django-12774",
+   "django__django-12858",
+   "django__django-12965",
+   "django__django-13012",
+   "django__django-13023",
+   "django__django-13028",
+   "django__django-13033",
+   "django__django-13109",
+   "django__django-13112",
+   "django__django-13128",
+   "django__django-13158",
+   "django__django-13343",
+   "django__django-13346",
+   "django__django-13363",
+   "django__django-13401",
+   "django__django-13406",
+   "django__django-13417",
+   "django__django-13449",
+   "django__django-13569",
+   "django__django-13590",
+   "django__django-13925",
+   "django__django-13964",
+   "django__django-14007",
+   "django__django-14017",
+   "django__django-14122",
+   "django__django-14140",
+   "django__django-14238",
+   "django__django-14351",
+   "django__django-14559",
+   "django__django-14672",
+   "django__django-15128",
+   "django__django-15161",
+   "django__django-15277",
+   "django__django-15280",
+   "django__django-15315",
+   "django__django-15368",
+   "django__django-15375",
+   "django__django-15382",
+   "django__django-15503",
+   "django__django-15554",
+   "django__django-15563",
+   "django__django-15569",
+   "django__django-15731",
+   "django__django-15814",
+   "django__django-15930",
+   "django__django-15957",
+   "django__django-16032",
+   "django__django-16082",
+   "django__django-16263",
+   "django__django-16315",
+   "django__django-16493",
+   "django__django-16801",
+   "django__django-16901",
+   "django__django-17084"
+  ],
+  "django/django|conf": [
+   "django__django-10914",
+   "django__django-12419"
+  ],
+  "django/django|db.backends": [
+   "django__django-10973",
+   "django__django-11138",
+   "django__django-11239",
+   "django__django-12039",
+   "django__django-12708",
+   "django__django-13121",
+   "django__django-13807",
+   "django__django-13821",
+   "django__django-14170",
+   "django__django-14315",
+   "django__django-14376",
+   "django__django-14434",
+   "django__django-15278",
+   "django__django-15561",
+   "django__django-15629",
+   "django__django-15732",
+   "django__django-15851"
+  ],
+  "django/django|utils.dateparse": [
+   "django__django-10999"
+  ],
+  "django/django|contrib.contenttypes": [
+   "django__django-11066",
+   "django__django-16256"
+  ],
+  "django/django|contrib.admin": [
+   "django__django-11095",
+   "django__django-11149",
+   "django__django-11551",
+   "django__django-11885",
+   "django__django-12143",
+   "django__django-12308",
+   "django__django-12713",
+   "django__django-13512",
+   "django__django-14404",
+   "django__django-14752",
+   "django__django-14855",
+   "django__django-15022",
+   "django__django-15467",
+   "django__django-16100",
+   "django__django-16527",
+   "django__django-16612",
+   "django__django-16661",
+   "django__django-16899"
+  ],
+  "django/django|contrib.auth": [
+   "django__django-11099",
+   "django__django-11451",
+   "django__django-11790",
+   "django__django-13551",
+   "django__django-13568",
+   "django__django-13741",
+   "django__django-16139",
+   "django__django-16333",
+   "django__django-16631"
+  ],
+  "django/django|template.engine": [
+   "django__django-11119"
+  ],
+  "django/django|http": [
+   "django__django-11133",
+   "django__django-16642"
+  ],
+  "django/django|db.migrations": [
+   "django__django-11141",
+   "django__django-11740",
+   "django__django-11815",
+   "django__django-12125",
+   "django__django-12754",
+   "django__django-13786",
+   "django__django-13820",
+   "django__django-14500",
+   "django__django-14580",
+   "django__django-14765",
+   "django__django-14999",
+   "django__django-15104",
+   "django__django-15252",
+   "django__django-15268",
+   "django__django-15380",
+   "django__django-15499",
+   "django__django-15695",
+   "django__django-15973",
+   "django__django-16595",
+   "django__django-16662",
+   "django__django-16819",
+   "django__django-17087"
+  ],
+  "django/django|forms": [
+   "django__django-11163",
+   "django__django-11433",
+   "django__django-11880",
+   "django__django-12193",
+   "django__django-12276",
+   "django__django-13315",
+   "django__django-13933",
+   "django__django-14034",
+   "django__django-14534",
+   "django__django-14608",
+   "django__django-14631",
+   "django__django-14725",
+   "django__django-14915",
+   "django__django-15916",
+   "django__django-16569",
+   "django__django-16667",
+   "django__django-16950"
+  ],
+  "django/django|utils.numberformat": [
+   "django__django-11206"
+  ],
+  "django/django|utils.html": [
+   "django__django-11276",
+   "django__django-14539"
+  ],
+  "django/django|core.management": [
+   "django__django-11292",
+   "django__django-11749",
+   "django__django-12741",
+   "django__django-13516",
+   "django__django-13658",
+   "django__django-13809",
+   "django__django-15037",
+   "django__django-15987",
+   "django__django-16116",
+   "django__django-16145",
+   "django__django-16454",
+   "django__django-7530"
+  ],
+  "django/django|urls": [
+   "django__django-11333",
+   "django__django-11477",
+   "django__django-14155"
+  ],
+  "django/django|core.mail": [
+   "django__django-11532"
+  ],
+  "django/django|contrib.admindocs": [
+   "django__django-11728",
+   "django__django-12155"
+  ],
+  "django/django|utils.http": [
+   "django__django-11848"
+  ],
+  "django/django|template.library": [
+   "django__django-12262"
+  ],
+  "django/django|core.cache": [
+   "django__django-13089"
+  ],
+  "django/django|contrib.messages": [
+   "django__django-13195",
+   "django__django-15127"
+  ],
+  "django/django|contrib.sessions": [
+   "django__django-13279"
+  ],
+  "django/django|views": [
+   "django__django-13297",
+   "django__django-13513",
+   "django__django-16136"
+  ],
+  "django/django|middleware": [
+   "django__django-13344"
+  ],
+  "django/django|core.files": [
+   "django__django-13410"
+  ],
+  "django/django|utils.dateformat": [
+   "django__django-13670",
+   "django__django-14373"
+  ],
+  "django/django|utils.functional": [
+   "django__django-13794"
+  ],
+  "django/django|core.handlers": [
+   "django__django-13810"
+  ],
+  "django/django|utils.autoreload": [
+   "django__django-13837",
+   "django__django-14311",
+   "django__django-14771"
+  ],
+  "django/django|core.servers": [
+   "django__django-14011",
+   "django__django-16502"
+  ],
+  "django/django|contrib.staticfiles": [
+   "django__django-14053",
+   "django__django-14493"
+  ],
+  "django/django|utils.datastructures": [
+   "django__django-14089"
+  ],
+  "django/django|utils.decorators": [
+   "django__django-14787"
+  ],
+  "django/django|utils.timezone": [
+   "django__django-14792"
+  ],
+  "django/django|utils.translation": [
+   "django__django-15098"
+  ],
+  "django/django|template.defaultfilters": [
+   "django__django-15103",
+   "django__django-15863",
+   "django__django-16485",
+   "django__django-16877"
+  ],
+  "django/django|core.serializers": [
+   "django__django-15525",
+   "django__django-16938"
+  ],
+  "django/django|template.autoreload": [
+   "django__django-15572"
+  ],
+  "django/django|utils.formats": [
+   "django__django-15741"
+  ],
+  "django/django|contrib.sitemaps": [
+   "django__django-16255"
+  ],
+  "django/django|utils.timesince": [
+   "django__django-16429"
+  ],
+  "django/django|contrib.postgres": [
+   "django__django-16560"
+  ],
+  "django/django|apps": [
+   "django__django-17029"
+  ],
+  "django/django|core.paginator": [
+   "django__django-9296"
+  ],
+  "matplotlib/matplotlib|lib/matplotlib": [
+   "matplotlib__matplotlib-13989",
+   "matplotlib__matplotlib-14623",
+   "matplotlib__matplotlib-20488",
+   "matplotlib__matplotlib-20676",
+   "matplotlib__matplotlib-20826",
+   "matplotlib__matplotlib-20859",
+   "matplotlib__matplotlib-21568",
+   "matplotlib__matplotlib-22719",
+   "matplotlib__matplotlib-22865",
+   "matplotlib__matplotlib-22871",
+   "matplotlib__matplotlib-23299",
+   "matplotlib__matplotlib-23412",
+   "matplotlib__matplotlib-23476",
+   "matplotlib__matplotlib-24026",
+   "matplotlib__matplotlib-24149",
+   "matplotlib__matplotlib-24177",
+   "matplotlib__matplotlib-24570",
+   "matplotlib__matplotlib-24627",
+   "matplotlib__matplotlib-24637",
+   "matplotlib__matplotlib-24870",
+   "matplotlib__matplotlib-24970",
+   "matplotlib__matplotlib-25122",
+   "matplotlib__matplotlib-25287",
+   "matplotlib__matplotlib-25311",
+   "matplotlib__matplotlib-25332",
+   "matplotlib__matplotlib-25479",
+   "matplotlib__matplotlib-25775",
+   "matplotlib__matplotlib-25960",
+   "matplotlib__matplotlib-26113",
+   "matplotlib__matplotlib-26208",
+   "matplotlib__matplotlib-26342",
+   "matplotlib__matplotlib-26466"
+  ],
+  "matplotlib/matplotlib|lib/mpl_toolkits": [
+   "matplotlib__matplotlib-23314",
+   "matplotlib__matplotlib-26291"
+  ],
+  "mwaskom/seaborn|seaborn/_core": [
+   "mwaskom__seaborn-3069",
+   "mwaskom__seaborn-3187"
+  ],
+  "pallets/flask|src/flask": [
+   "pallets__flask-5014"
+  ],
+  "psf/requests|requests/models": [
+   "psf__requests-1142",
+   "psf__requests-2931",
+   "psf__requests-5414"
+  ],
+  "psf/requests|requests/sessions": [
+   "psf__requests-1724",
+   "psf__requests-1921",
+   "psf__requests-2317"
+  ],
+  "psf/requests|requests/auth": [
+   "psf__requests-1766"
+  ],
+  "psf/requests|requests/utils": [
+   "psf__requests-6028"
+  ],
+  "pydata/xarray|xarray/core": [
+   "pydata__xarray-2905",
+   "pydata__xarray-3095",
+   "pydata__xarray-3151",
+   "pydata__xarray-3305",
+   "pydata__xarray-3677",
+   "pydata__xarray-3993",
+   "pydata__xarray-4075",
+   "pydata__xarray-4094",
+   "pydata__xarray-4356",
+   "pydata__xarray-4629",
+   "pydata__xarray-4687",
+   "pydata__xarray-4695",
+   "pydata__xarray-6461",
+   "pydata__xarray-6599",
+   "pydata__xarray-6721",
+   "pydata__xarray-6744",
+   "pydata__xarray-6938",
+   "pydata__xarray-6992",
+   "pydata__xarray-7229",
+   "pydata__xarray-7233",
+   "pydata__xarray-7393"
+  ],
+  "pydata/xarray|xarray/coding": [
+   "pydata__xarray-4966"
+  ],
+  "pylint-dev/pylint|pylint/pyreverse": [
+   "pylint-dev__pylint-4551"
+  ],
+  "pylint-dev/pylint|pylint/checkers": [
+   "pylint-dev__pylint-4604",
+   "pylint-dev__pylint-4970"
+  ],
+  "pylint-dev/pylint|pylint/config": [
+   "pylint-dev__pylint-4661",
+   "pylint-dev__pylint-6386"
+  ],
+  "pylint-dev/pylint|pylint/lint": [
+   "pylint-dev__pylint-6528",
+   "pylint-dev__pylint-6903",
+   "pylint-dev__pylint-7080"
+  ],
+  "pylint-dev/pylint|pylint/__init__": [
+   "pylint-dev__pylint-7277"
+  ],
+  "pylint-dev/pylint|pylint/utils": [
+   "pylint-dev__pylint-8898"
+  ],
+  "pytest-dev/pytest|src/_pytest": [
+   "pytest-dev__pytest-10051",
+   "pytest-dev__pytest-10081",
+   "pytest-dev__pytest-10356",
+   "pytest-dev__pytest-5262",
+   "pytest-dev__pytest-5631",
+   "pytest-dev__pytest-5787",
+   "pytest-dev__pytest-5809",
+   "pytest-dev__pytest-5840",
+   "pytest-dev__pytest-6197",
+   "pytest-dev__pytest-6202",
+   "pytest-dev__pytest-7205",
+   "pytest-dev__pytest-7236",
+   "pytest-dev__pytest-7324",
+   "pytest-dev__pytest-7432",
+   "pytest-dev__pytest-7490",
+   "pytest-dev__pytest-7521",
+   "pytest-dev__pytest-7571",
+   "pytest-dev__pytest-7982",
+   "pytest-dev__pytest-8399"
+  ],
+  "scikit-learn/scikit-learn|sklearn/linear_model": [
+   "scikit-learn__scikit-learn-10297",
+   "scikit-learn__scikit-learn-11578",
+   "scikit-learn__scikit-learn-12973",
+   "scikit-learn__scikit-learn-13328",
+   "scikit-learn__scikit-learn-14087"
+  ],
+  "scikit-learn/scikit-learn|sklearn/metrics": [
+   "scikit-learn__scikit-learn-10844",
+   "scikit-learn__scikit-learn-26194"
+  ],
+  "scikit-learn/scikit-learn|sklearn/feature_extraction": [
+   "scikit-learn__scikit-learn-10908",
+   "scikit-learn__scikit-learn-15100"
+  ],
+  "scikit-learn/scikit-learn|sklearn/model_selection": [
+   "scikit-learn__scikit-learn-11310",
+   "scikit-learn__scikit-learn-13124",
+   "scikit-learn__scikit-learn-14983"
+  ],
+  "scikit-learn/scikit-learn|sklearn/base": [
+   "scikit-learn__scikit-learn-12585",
+   "scikit-learn__scikit-learn-25102"
+  ],
+  "scikit-learn/scikit-learn|examples/decomposition": [
+   "scikit-learn__scikit-learn-12682"
+  ],
+  "scikit-learn/scikit-learn|sklearn/preprocessing": [
+   "scikit-learn__scikit-learn-13135"
+  ],
+  "scikit-learn/scikit-learn|sklearn/mixture": [
+   "scikit-learn__scikit-learn-13142"
+  ],
+  "scikit-learn/scikit-learn|sklearn/pipeline": [
+   "scikit-learn__scikit-learn-13439"
+  ],
+  "scikit-learn/scikit-learn|sklearn/ensemble": [
+   "scikit-learn__scikit-learn-13496",
+   "scikit-learn__scikit-learn-13779",
+   "scikit-learn__scikit-learn-14710",
+   "scikit-learn__scikit-learn-25931"
+  ],
+  "scikit-learn/scikit-learn|sklearn/tree": [
+   "scikit-learn__scikit-learn-14053"
+  ],
+  "scikit-learn/scikit-learn|sklearn/utils": [
+   "scikit-learn__scikit-learn-14141",
+   "scikit-learn__scikit-learn-25747"
+  ],
+  "scikit-learn/scikit-learn|sklearn/cluster": [
+   "scikit-learn__scikit-learn-14496",
+   "scikit-learn__scikit-learn-9288"
+  ],
+  "scikit-learn/scikit-learn|sklearn/multioutput": [
+   "scikit-learn__scikit-learn-14629"
+  ],
+  "scikit-learn/scikit-learn|sklearn/svm": [
+   "scikit-learn__scikit-learn-14894"
+  ],
+  "scikit-learn/scikit-learn|sklearn/impute": [
+   "scikit-learn__scikit-learn-25232"
+  ],
+  "scikit-learn/scikit-learn|sklearn/feature_selection": [
+   "scikit-learn__scikit-learn-25973"
+  ],
+  "scikit-learn/scikit-learn|sklearn/compose": [
+   "scikit-learn__scikit-learn-26323"
+  ],
+  "sphinx-doc/sphinx|sphinx/directives": [
+   "sphinx-doc__sphinx-10323",
+   "sphinx-doc__sphinx-11510"
+  ],
+  "sphinx-doc/sphinx|sphinx/writers": [
+   "sphinx-doc__sphinx-10435"
+  ],
+  "sphinx-doc/sphinx|sphinx/ext": [
+   "sphinx-doc__sphinx-10449",
+   "sphinx-doc__sphinx-10614",
+   "sphinx-doc__sphinx-7748",
+   "sphinx-doc__sphinx-7889",
+   "sphinx-doc__sphinx-7910",
+   "sphinx-doc__sphinx-8035",
+   "sphinx-doc__sphinx-8056",
+   "sphinx-doc__sphinx-8459",
+   "sphinx-doc__sphinx-8548",
+   "sphinx-doc__sphinx-8593",
+   "sphinx-doc__sphinx-8595",
+   "sphinx-doc__sphinx-8721",
+   "sphinx-doc__sphinx-9229",
+   "sphinx-doc__sphinx-9658",
+   "sphinx-doc__sphinx-9673"
+  ],
+  "sphinx-doc/sphinx|sphinx/builders": [
+   "sphinx-doc__sphinx-10466",
+   "sphinx-doc__sphinx-7985",
+   "sphinx-doc__sphinx-8269",
+   "sphinx-doc__sphinx-8475",
+   "sphinx-doc__sphinx-8621"
+  ],
+  "sphinx-doc/sphinx|sphinx/environment": [
+   "sphinx-doc__sphinx-10673"
+  ],
+  "sphinx-doc/sphinx|sphinx/util": [
+   "sphinx-doc__sphinx-11445",
+   "sphinx-doc__sphinx-7757",
+   "sphinx-doc__sphinx-9230",
+   "sphinx-doc__sphinx-9281"
+  ],
+  "sphinx-doc/sphinx|sphinx/domains": [
+   "sphinx-doc__sphinx-7440",
+   "sphinx-doc__sphinx-7454",
+   "sphinx-doc__sphinx-7462",
+   "sphinx-doc__sphinx-7590",
+   "sphinx-doc__sphinx-8551",
+   "sphinx-doc__sphinx-8638",
+   "sphinx-doc__sphinx-9258",
+   "sphinx-doc__sphinx-9461",
+   "sphinx-doc__sphinx-9591",
+   "sphinx-doc__sphinx-9602",
+   "sphinx-doc__sphinx-9698"
+  ],
+  "sphinx-doc/sphinx|sphinx/application": [
+   "sphinx-doc__sphinx-8120"
+  ],
+  "sphinx-doc/sphinx|sphinx/pycode": [
+   "sphinx-doc__sphinx-8265",
+   "sphinx-doc__sphinx-9367"
+  ],
+  "sphinx-doc/sphinx|sphinx/cmd": [
+   "sphinx-doc__sphinx-9320"
+  ],
+  "sphinx-doc/sphinx|sphinx/extension": [
+   "sphinx-doc__sphinx-9711"
+  ],
+  "sympy/sympy|geometry": [
+   "sympy__sympy-11618",
+   "sympy__sympy-17655",
+   "sympy__sympy-22714"
+  ],
+  "sympy/sympy|core": [
+   "sympy__sympy-12096",
+   "sympy__sympy-13372",
+   "sympy__sympy-15599",
+   "sympy__sympy-15875",
+   "sympy__sympy-18211",
+   "sympy__sympy-19637",
+   "sympy__sympy-20590",
+   "sympy__sympy-20801",
+   "sympy__sympy-21379",
+   "sympy__sympy-23534",
+   "sympy__sympy-24562"
+  ],
+  "sympy/sympy|matrices": [
+   "sympy__sympy-12419",
+   "sympy__sympy-13031",
+   "sympy__sympy-13647",
+   "sympy__sympy-13877",
+   "sympy__sympy-17630"
+  ],
+  "sympy/sympy|combinatorics": [
+   "sympy__sympy-12481",
+   "sympy__sympy-12489",
+   "sympy__sympy-19954",
+   "sympy__sympy-24443"
+  ],
+  "sympy/sympy|polys": [
+   "sympy__sympy-13091",
+   "sympy__sympy-13757",
+   "sympy__sympy-18698",
+   "sympy__sympy-19040",
+   "sympy__sympy-20428",
+   "sympy__sympy-21847",
+   "sympy__sympy-23413",
+   "sympy__sympy-24539"
+  ],
+  "sympy/sympy|functions": [
+   "sympy__sympy-13480",
+   "sympy__sympy-13852",
+   "sympy__sympy-15809"
+  ],
+  "sympy/sympy|concrete": [
+   "sympy__sympy-13551"
+  ],
+  "sympy/sympy|sets": [
+   "sympy__sympy-13615",
+   "sympy__sympy-19495",
+   "sympy__sympy-20438",
+   "sympy__sympy-21596",
+   "sympy__sympy-23950"
+  ],
+  "sympy/sympy|printing": [
+   "sympy__sympy-13798",
+   "sympy__sympy-14248",
+   "sympy__sympy-14531",
+   "sympy__sympy-14976",
+   "sympy__sympy-15345",
+   "sympy__sympy-15976",
+   "sympy__sympy-16766",
+   "sympy__sympy-18763",
+   "sympy__sympy-19346",
+   "sympy__sympy-20916",
+   "sympy__sympy-21612",
+   "sympy__sympy-22080",
+   "sympy__sympy-22914"
+  ],
+  "sympy/sympy|stats": [
+   "sympy__sympy-13878"
+  ],
+  "sympy/sympy|physics": [
+   "sympy__sympy-13974",
+   "sympy__sympy-14711",
+   "sympy__sympy-19783",
+   "sympy__sympy-21930",
+   "sympy__sympy-23824",
+   "sympy__sympy-24066",
+   "sympy__sympy-24213"
+  ],
+  "sympy/sympy|tensor": [
+   "sympy__sympy-15017"
+  ],
+  "sympy/sympy|algebras": [
+   "sympy__sympy-15349"
+  ],
+  "sympy/sympy|simplify": [
+   "sympy__sympy-16450",
+   "sympy__sympy-17139",
+   "sympy__sympy-17318"
+  ],
+  "sympy/sympy|assumptions": [
+   "sympy__sympy-16597"
+  ],
+  "sympy/sympy|utilities": [
+   "sympy__sympy-16792",
+   "sympy__sympy-20154",
+   "sympy__sympy-23262"
+  ],
+  "sympy/sympy|crypto": [
+   "sympy__sympy-16886"
+  ],
+  "sympy/sympy|solvers": [
+   "sympy__sympy-18189"
+  ],
+  "sympy/sympy|ntheory": [
+   "sympy__sympy-18199"
+  ],
+  "sympy/sympy|codegen": [
+   "sympy__sympy-22456"
+  ],
+  "sympy/sympy|parsing": [
+   "sympy__sympy-24661"
+  ]
+ },
+ "task_info": {
+  "astropy__astropy-12907": {
+   "repo": "astropy/astropy",
+   "subsystem": "astropy/modeling",
+   "difficulty": "15 min - 1 hour"
+  },
+  "astropy__astropy-13033": {
+   "repo": "astropy/astropy",
+   "subsystem": "astropy/timeseries",
+   "difficulty": "15 min - 1 hour"
+  },
+  "astropy__astropy-13236": {
+   "repo": "astropy/astropy",
+   "subsystem": "astropy/table",
+   "difficulty": "15 min - 1 hour"
+  },
+  "astropy__astropy-13398": {
+   "repo": "astropy/astropy",
+   "subsystem": "astropy/coordinates",
+   "difficulty": "1-4 hours"
+  },
+  "astropy__astropy-13453": {
+   "repo": "astropy/astropy",
+   "subsystem": "astropy/io",
+   "difficulty": "15 min - 1 hour"
+  },
+  "astropy__astropy-13579": {
+   "repo": "astropy/astropy",
+   "subsystem": "astropy/wcs",
+   "difficulty": "1-4 hours"
+  },
+  "astropy__astropy-13977": {
+   "repo": "astropy/astropy",
+   "subsystem": "astropy/units",
+   "difficulty": "15 min - 1 hour"
+  },
+  "astropy__astropy-14096": {
+   "repo": "astropy/astropy",
+   "subsystem": "astropy/coordinates",
+   "difficulty": "15 min - 1 hour"
+  },
+  "astropy__astropy-14182": {
+   "repo": "astropy/astropy",
+   "subsystem": "astropy/io",
+   "difficulty": "15 min - 1 hour"
+  },
+  "astropy__astropy-14309": {
+   "repo": "astropy/astropy",
+   "subsystem": "astropy/io",
+   "difficulty": "<15 min fix"
+  },
+  "astropy__astropy-14365": {
+   "repo": "astropy/astropy",
+   "subsystem": "astropy/io",
+   "difficulty": "15 min - 1 hour"
+  },
+  "astropy__astropy-14369": {
+   "repo": "astropy/astropy",
+   "subsystem": "astropy/units",
+   "difficulty": "1-4 hours"
+  },
+  "astropy__astropy-14508": {
+   "repo": "astropy/astropy",
+   "subsystem": "astropy/io",
+   "difficulty": "15 min - 1 hour"
+  },
+  "astropy__astropy-14539": {
+   "repo": "astropy/astropy",
+   "subsystem": "astropy/io",
+   "difficulty": "15 min - 1 hour"
+  },
+  "astropy__astropy-14598": {
+   "repo": "astropy/astropy",
+   "subsystem": "astropy/io",
+   "difficulty": "15 min - 1 hour"
+  },
+  "astropy__astropy-14995": {
+   "repo": "astropy/astropy",
+   "subsystem": "astropy/nddata",
+   "difficulty": "<15 min fix"
+  },
+  "astropy__astropy-7166": {
+   "repo": "astropy/astropy",
+   "subsystem": "astropy/utils",
+   "difficulty": "<15 min fix"
+  },
+  "astropy__astropy-7336": {
+   "repo": "astropy/astropy",
+   "subsystem": "astropy/units",
+   "difficulty": "<15 min fix"
+  },
+  "astropy__astropy-7606": {
+   "repo": "astropy/astropy",
+   "subsystem": "astropy/units",
+   "difficulty": "15 min - 1 hour"
+  },
+  "astropy__astropy-7671": {
+   "repo": "astropy/astropy",
+   "subsystem": "astropy/utils",
+   "difficulty": "15 min - 1 hour"
+  },
+  "astropy__astropy-8707": {
+   "repo": "astropy/astropy",
+   "subsystem": "astropy/io",
+   "difficulty": "15 min - 1 hour"
+  },
+  "astropy__astropy-8872": {
+   "repo": "astropy/astropy",
+   "subsystem": "astropy/units",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-10097": {
+   "repo": "django/django",
+   "subsystem": "core.validators",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-10554": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "1-4 hours"
+  },
+  "django__django-10880": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-10914": {
+   "repo": "django/django",
+   "subsystem": "conf",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-10973": {
+   "repo": "django/django",
+   "subsystem": "db.backends",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-10999": {
+   "repo": "django/django",
+   "subsystem": "utils.dateparse",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-11066": {
+   "repo": "django/django",
+   "subsystem": "contrib.contenttypes",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-11087": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-11095": {
+   "repo": "django/django",
+   "subsystem": "contrib.admin",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-11099": {
+   "repo": "django/django",
+   "subsystem": "contrib.auth",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-11119": {
+   "repo": "django/django",
+   "subsystem": "template.engine",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-11133": {
+   "repo": "django/django",
+   "subsystem": "http",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-11138": {
+   "repo": "django/django",
+   "subsystem": "db.backends",
+   "difficulty": "1-4 hours"
+  },
+  "django__django-11141": {
+   "repo": "django/django",
+   "subsystem": "db.migrations",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-11149": {
+   "repo": "django/django",
+   "subsystem": "contrib.admin",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-11163": {
+   "repo": "django/django",
+   "subsystem": "forms",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-11179": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-11206": {
+   "repo": "django/django",
+   "subsystem": "utils.numberformat",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-11211": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-11239": {
+   "repo": "django/django",
+   "subsystem": "db.backends",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-11265": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-11276": {
+   "repo": "django/django",
+   "subsystem": "utils.html",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-11292": {
+   "repo": "django/django",
+   "subsystem": "core.management",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-11299": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-11333": {
+   "repo": "django/django",
+   "subsystem": "urls",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-11400": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "1-4 hours"
+  },
+  "django__django-11433": {
+   "repo": "django/django",
+   "subsystem": "forms",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-11451": {
+   "repo": "django/django",
+   "subsystem": "contrib.auth",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-11477": {
+   "repo": "django/django",
+   "subsystem": "urls",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-11490": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-11532": {
+   "repo": "django/django",
+   "subsystem": "core.mail",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-11551": {
+   "repo": "django/django",
+   "subsystem": "contrib.admin",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-11555": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-11603": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-11728": {
+   "repo": "django/django",
+   "subsystem": "contrib.admindocs",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-11734": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-11740": {
+   "repo": "django/django",
+   "subsystem": "db.migrations",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-11749": {
+   "repo": "django/django",
+   "subsystem": "core.management",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-11790": {
+   "repo": "django/django",
+   "subsystem": "contrib.auth",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-11815": {
+   "repo": "django/django",
+   "subsystem": "db.migrations",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-11820": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-11848": {
+   "repo": "django/django",
+   "subsystem": "utils.http",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-11880": {
+   "repo": "django/django",
+   "subsystem": "forms",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-11885": {
+   "repo": "django/django",
+   "subsystem": "contrib.admin",
+   "difficulty": "1-4 hours"
+  },
+  "django__django-11951": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-11964": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-11999": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-12039": {
+   "repo": "django/django",
+   "subsystem": "db.backends",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-12050": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-12125": {
+   "repo": "django/django",
+   "subsystem": "db.migrations",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-12143": {
+   "repo": "django/django",
+   "subsystem": "contrib.admin",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-12155": {
+   "repo": "django/django",
+   "subsystem": "contrib.admindocs",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-12193": {
+   "repo": "django/django",
+   "subsystem": "forms",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-12209": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-12262": {
+   "repo": "django/django",
+   "subsystem": "template.library",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-12273": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-12276": {
+   "repo": "django/django",
+   "subsystem": "forms",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-12304": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-12308": {
+   "repo": "django/django",
+   "subsystem": "contrib.admin",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-12325": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "1-4 hours"
+  },
+  "django__django-12406": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-12419": {
+   "repo": "django/django",
+   "subsystem": "conf",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-12663": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-12708": {
+   "repo": "django/django",
+   "subsystem": "db.backends",
+   "difficulty": "1-4 hours"
+  },
+  "django__django-12713": {
+   "repo": "django/django",
+   "subsystem": "contrib.admin",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-12741": {
+   "repo": "django/django",
+   "subsystem": "core.management",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-12754": {
+   "repo": "django/django",
+   "subsystem": "db.migrations",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-12774": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-12858": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-12965": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-13012": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-13023": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-13028": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-13033": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-13089": {
+   "repo": "django/django",
+   "subsystem": "core.cache",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-13109": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-13112": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-13121": {
+   "repo": "django/django",
+   "subsystem": "db.backends",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-13128": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "1-4 hours"
+  },
+  "django__django-13158": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-13195": {
+   "repo": "django/django",
+   "subsystem": "contrib.messages",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-13212": {
+   "repo": "django/django",
+   "subsystem": "core.validators",
+   "difficulty": "1-4 hours"
+  },
+  "django__django-13279": {
+   "repo": "django/django",
+   "subsystem": "contrib.sessions",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-13297": {
+   "repo": "django/django",
+   "subsystem": "views",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-13315": {
+   "repo": "django/django",
+   "subsystem": "forms",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-13343": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-13344": {
+   "repo": "django/django",
+   "subsystem": "middleware",
+   "difficulty": "1-4 hours"
+  },
+  "django__django-13346": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-13363": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-13401": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-13406": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-13410": {
+   "repo": "django/django",
+   "subsystem": "core.files",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-13417": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-13449": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "1-4 hours"
+  },
+  "django__django-13512": {
+   "repo": "django/django",
+   "subsystem": "contrib.admin",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-13513": {
+   "repo": "django/django",
+   "subsystem": "views",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-13516": {
+   "repo": "django/django",
+   "subsystem": "core.management",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-13551": {
+   "repo": "django/django",
+   "subsystem": "contrib.auth",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-13568": {
+   "repo": "django/django",
+   "subsystem": "contrib.auth",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-13569": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-13590": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-13658": {
+   "repo": "django/django",
+   "subsystem": "core.management",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-13670": {
+   "repo": "django/django",
+   "subsystem": "utils.dateformat",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-13741": {
+   "repo": "django/django",
+   "subsystem": "contrib.auth",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-13786": {
+   "repo": "django/django",
+   "subsystem": "db.migrations",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-13794": {
+   "repo": "django/django",
+   "subsystem": "utils.functional",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-13807": {
+   "repo": "django/django",
+   "subsystem": "db.backends",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-13809": {
+   "repo": "django/django",
+   "subsystem": "core.management",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-13810": {
+   "repo": "django/django",
+   "subsystem": "core.handlers",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-13820": {
+   "repo": "django/django",
+   "subsystem": "db.migrations",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-13821": {
+   "repo": "django/django",
+   "subsystem": "db.backends",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-13837": {
+   "repo": "django/django",
+   "subsystem": "utils.autoreload",
+   "difficulty": "1-4 hours"
+  },
+  "django__django-13925": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-13933": {
+   "repo": "django/django",
+   "subsystem": "forms",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-13964": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-14007": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "1-4 hours"
+  },
+  "django__django-14011": {
+   "repo": "django/django",
+   "subsystem": "core.servers",
+   "difficulty": "1-4 hours"
+  },
+  "django__django-14017": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-14034": {
+   "repo": "django/django",
+   "subsystem": "forms",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-14053": {
+   "repo": "django/django",
+   "subsystem": "contrib.staticfiles",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-14089": {
+   "repo": "django/django",
+   "subsystem": "utils.datastructures",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-14122": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-14140": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-14155": {
+   "repo": "django/django",
+   "subsystem": "urls",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-14170": {
+   "repo": "django/django",
+   "subsystem": "db.backends",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-14238": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-14311": {
+   "repo": "django/django",
+   "subsystem": "utils.autoreload",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-14315": {
+   "repo": "django/django",
+   "subsystem": "db.backends",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-14349": {
+   "repo": "django/django",
+   "subsystem": "core.validators",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-14351": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-14373": {
+   "repo": "django/django",
+   "subsystem": "utils.dateformat",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-14376": {
+   "repo": "django/django",
+   "subsystem": "db.backends",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-14404": {
+   "repo": "django/django",
+   "subsystem": "contrib.admin",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-14434": {
+   "repo": "django/django",
+   "subsystem": "db.backends",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-14493": {
+   "repo": "django/django",
+   "subsystem": "contrib.staticfiles",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-14500": {
+   "repo": "django/django",
+   "subsystem": "db.migrations",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-14534": {
+   "repo": "django/django",
+   "subsystem": "forms",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-14539": {
+   "repo": "django/django",
+   "subsystem": "utils.html",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-14559": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-14580": {
+   "repo": "django/django",
+   "subsystem": "db.migrations",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-14608": {
+   "repo": "django/django",
+   "subsystem": "forms",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-14631": {
+   "repo": "django/django",
+   "subsystem": "forms",
+   "difficulty": "1-4 hours"
+  },
+  "django__django-14672": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-14725": {
+   "repo": "django/django",
+   "subsystem": "forms",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-14752": {
+   "repo": "django/django",
+   "subsystem": "contrib.admin",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-14765": {
+   "repo": "django/django",
+   "subsystem": "db.migrations",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-14771": {
+   "repo": "django/django",
+   "subsystem": "utils.autoreload",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-14787": {
+   "repo": "django/django",
+   "subsystem": "utils.decorators",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-14792": {
+   "repo": "django/django",
+   "subsystem": "utils.timezone",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-14855": {
+   "repo": "django/django",
+   "subsystem": "contrib.admin",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-14915": {
+   "repo": "django/django",
+   "subsystem": "forms",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-14999": {
+   "repo": "django/django",
+   "subsystem": "db.migrations",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-15022": {
+   "repo": "django/django",
+   "subsystem": "contrib.admin",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-15037": {
+   "repo": "django/django",
+   "subsystem": "core.management",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-15098": {
+   "repo": "django/django",
+   "subsystem": "utils.translation",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-15103": {
+   "repo": "django/django",
+   "subsystem": "template.defaultfilters",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-15104": {
+   "repo": "django/django",
+   "subsystem": "db.migrations",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-15127": {
+   "repo": "django/django",
+   "subsystem": "contrib.messages",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-15128": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "1-4 hours"
+  },
+  "django__django-15161": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-15252": {
+   "repo": "django/django",
+   "subsystem": "db.migrations",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-15268": {
+   "repo": "django/django",
+   "subsystem": "db.migrations",
+   "difficulty": "1-4 hours"
+  },
+  "django__django-15277": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-15278": {
+   "repo": "django/django",
+   "subsystem": "db.backends",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-15280": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-15315": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-15368": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-15375": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-15380": {
+   "repo": "django/django",
+   "subsystem": "db.migrations",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-15382": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-15467": {
+   "repo": "django/django",
+   "subsystem": "contrib.admin",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-15499": {
+   "repo": "django/django",
+   "subsystem": "db.migrations",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-15503": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "1-4 hours"
+  },
+  "django__django-15525": {
+   "repo": "django/django",
+   "subsystem": "core.serializers",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-15554": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-15561": {
+   "repo": "django/django",
+   "subsystem": "db.backends",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-15563": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-15569": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-15572": {
+   "repo": "django/django",
+   "subsystem": "template.autoreload",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-15629": {
+   "repo": "django/django",
+   "subsystem": "db.backends",
+   "difficulty": "1-4 hours"
+  },
+  "django__django-15695": {
+   "repo": "django/django",
+   "subsystem": "db.migrations",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-15731": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-15732": {
+   "repo": "django/django",
+   "subsystem": "db.backends",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-15741": {
+   "repo": "django/django",
+   "subsystem": "utils.formats",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-15814": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-15851": {
+   "repo": "django/django",
+   "subsystem": "db.backends",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-15863": {
+   "repo": "django/django",
+   "subsystem": "template.defaultfilters",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-15916": {
+   "repo": "django/django",
+   "subsystem": "forms",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-15930": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-15957": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "1-4 hours"
+  },
+  "django__django-15973": {
+   "repo": "django/django",
+   "subsystem": "db.migrations",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-15987": {
+   "repo": "django/django",
+   "subsystem": "core.management",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-16032": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-16082": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-16100": {
+   "repo": "django/django",
+   "subsystem": "contrib.admin",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-16116": {
+   "repo": "django/django",
+   "subsystem": "core.management",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-16136": {
+   "repo": "django/django",
+   "subsystem": "views",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-16139": {
+   "repo": "django/django",
+   "subsystem": "contrib.auth",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-16145": {
+   "repo": "django/django",
+   "subsystem": "core.management",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-16255": {
+   "repo": "django/django",
+   "subsystem": "contrib.sitemaps",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-16256": {
+   "repo": "django/django",
+   "subsystem": "contrib.contenttypes",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-16263": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "1-4 hours"
+  },
+  "django__django-16315": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-16333": {
+   "repo": "django/django",
+   "subsystem": "contrib.auth",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-16429": {
+   "repo": "django/django",
+   "subsystem": "utils.timesince",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-16454": {
+   "repo": "django/django",
+   "subsystem": "core.management",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-16485": {
+   "repo": "django/django",
+   "subsystem": "template.defaultfilters",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-16493": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-16502": {
+   "repo": "django/django",
+   "subsystem": "core.servers",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-16527": {
+   "repo": "django/django",
+   "subsystem": "contrib.admin",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-16560": {
+   "repo": "django/django",
+   "subsystem": "contrib.postgres",
+   "difficulty": "1-4 hours"
+  },
+  "django__django-16569": {
+   "repo": "django/django",
+   "subsystem": "forms",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-16595": {
+   "repo": "django/django",
+   "subsystem": "db.migrations",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-16612": {
+   "repo": "django/django",
+   "subsystem": "contrib.admin",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-16631": {
+   "repo": "django/django",
+   "subsystem": "contrib.auth",
+   "difficulty": "1-4 hours"
+  },
+  "django__django-16642": {
+   "repo": "django/django",
+   "subsystem": "http",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-16661": {
+   "repo": "django/django",
+   "subsystem": "contrib.admin",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-16662": {
+   "repo": "django/django",
+   "subsystem": "db.migrations",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-16667": {
+   "repo": "django/django",
+   "subsystem": "forms",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-16801": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-16819": {
+   "repo": "django/django",
+   "subsystem": "db.migrations",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-16877": {
+   "repo": "django/django",
+   "subsystem": "template.defaultfilters",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-16899": {
+   "repo": "django/django",
+   "subsystem": "contrib.admin",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-16901": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-16938": {
+   "repo": "django/django",
+   "subsystem": "core.serializers",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-16950": {
+   "repo": "django/django",
+   "subsystem": "forms",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-17029": {
+   "repo": "django/django",
+   "subsystem": "apps",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-17084": {
+   "repo": "django/django",
+   "subsystem": "db.models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-17087": {
+   "repo": "django/django",
+   "subsystem": "db.migrations",
+   "difficulty": "<15 min fix"
+  },
+  "django__django-7530": {
+   "repo": "django/django",
+   "subsystem": "core.management",
+   "difficulty": "15 min - 1 hour"
+  },
+  "django__django-9296": {
+   "repo": "django/django",
+   "subsystem": "core.paginator",
+   "difficulty": "<15 min fix"
+  },
+  "matplotlib__matplotlib-13989": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/matplotlib",
+   "difficulty": "<15 min fix"
+  },
+  "matplotlib__matplotlib-14623": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/matplotlib",
+   "difficulty": "15 min - 1 hour"
+  },
+  "matplotlib__matplotlib-20488": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/matplotlib",
+   "difficulty": "15 min - 1 hour"
+  },
+  "matplotlib__matplotlib-20676": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/matplotlib",
+   "difficulty": "<15 min fix"
+  },
+  "matplotlib__matplotlib-20826": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/matplotlib",
+   "difficulty": "15 min - 1 hour"
+  },
+  "matplotlib__matplotlib-20859": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/matplotlib",
+   "difficulty": "<15 min fix"
+  },
+  "matplotlib__matplotlib-21568": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/matplotlib",
+   "difficulty": "15 min - 1 hour"
+  },
+  "matplotlib__matplotlib-22719": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/matplotlib",
+   "difficulty": "<15 min fix"
+  },
+  "matplotlib__matplotlib-22865": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/matplotlib",
+   "difficulty": "15 min - 1 hour"
+  },
+  "matplotlib__matplotlib-22871": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/matplotlib",
+   "difficulty": "15 min - 1 hour"
+  },
+  "matplotlib__matplotlib-23299": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/matplotlib",
+   "difficulty": "15 min - 1 hour"
+  },
+  "matplotlib__matplotlib-23314": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/mpl_toolkits",
+   "difficulty": "15 min - 1 hour"
+  },
+  "matplotlib__matplotlib-23412": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/matplotlib",
+   "difficulty": "15 min - 1 hour"
+  },
+  "matplotlib__matplotlib-23476": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/matplotlib",
+   "difficulty": "<15 min fix"
+  },
+  "matplotlib__matplotlib-24026": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/matplotlib",
+   "difficulty": "15 min - 1 hour"
+  },
+  "matplotlib__matplotlib-24149": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/matplotlib",
+   "difficulty": "<15 min fix"
+  },
+  "matplotlib__matplotlib-24177": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/matplotlib",
+   "difficulty": "<15 min fix"
+  },
+  "matplotlib__matplotlib-24570": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/matplotlib",
+   "difficulty": "<15 min fix"
+  },
+  "matplotlib__matplotlib-24627": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/matplotlib",
+   "difficulty": "15 min - 1 hour"
+  },
+  "matplotlib__matplotlib-24637": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/matplotlib",
+   "difficulty": "15 min - 1 hour"
+  },
+  "matplotlib__matplotlib-24870": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/matplotlib",
+   "difficulty": "15 min - 1 hour"
+  },
+  "matplotlib__matplotlib-24970": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/matplotlib",
+   "difficulty": "15 min - 1 hour"
+  },
+  "matplotlib__matplotlib-25122": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/matplotlib",
+   "difficulty": "<15 min fix"
+  },
+  "matplotlib__matplotlib-25287": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/matplotlib",
+   "difficulty": "<15 min fix"
+  },
+  "matplotlib__matplotlib-25311": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/matplotlib",
+   "difficulty": "<15 min fix"
+  },
+  "matplotlib__matplotlib-25332": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/matplotlib",
+   "difficulty": "<15 min fix"
+  },
+  "matplotlib__matplotlib-25479": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/matplotlib",
+   "difficulty": "<15 min fix"
+  },
+  "matplotlib__matplotlib-25775": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/matplotlib",
+   "difficulty": "15 min - 1 hour"
+  },
+  "matplotlib__matplotlib-25960": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/matplotlib",
+   "difficulty": "15 min - 1 hour"
+  },
+  "matplotlib__matplotlib-26113": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/matplotlib",
+   "difficulty": "<15 min fix"
+  },
+  "matplotlib__matplotlib-26208": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/matplotlib",
+   "difficulty": "<15 min fix"
+  },
+  "matplotlib__matplotlib-26291": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/mpl_toolkits",
+   "difficulty": "15 min - 1 hour"
+  },
+  "matplotlib__matplotlib-26342": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/matplotlib",
+   "difficulty": "15 min - 1 hour"
+  },
+  "matplotlib__matplotlib-26466": {
+   "repo": "matplotlib/matplotlib",
+   "subsystem": "lib/matplotlib",
+   "difficulty": "15 min - 1 hour"
+  },
+  "mwaskom__seaborn-3069": {
+   "repo": "mwaskom/seaborn",
+   "subsystem": "seaborn/_core",
+   "difficulty": "15 min - 1 hour"
+  },
+  "mwaskom__seaborn-3187": {
+   "repo": "mwaskom/seaborn",
+   "subsystem": "seaborn/_core",
+   "difficulty": "15 min - 1 hour"
+  },
+  "pallets__flask-5014": {
+   "repo": "pallets/flask",
+   "subsystem": "src/flask",
+   "difficulty": "<15 min fix"
+  },
+  "psf__requests-1142": {
+   "repo": "psf/requests",
+   "subsystem": "requests/models",
+   "difficulty": "<15 min fix"
+  },
+  "psf__requests-1724": {
+   "repo": "psf/requests",
+   "subsystem": "requests/sessions",
+   "difficulty": "<15 min fix"
+  },
+  "psf__requests-1766": {
+   "repo": "psf/requests",
+   "subsystem": "requests/auth",
+   "difficulty": "<15 min fix"
+  },
+  "psf__requests-1921": {
+   "repo": "psf/requests",
+   "subsystem": "requests/sessions",
+   "difficulty": "<15 min fix"
+  },
+  "psf__requests-2317": {
+   "repo": "psf/requests",
+   "subsystem": "requests/sessions",
+   "difficulty": "<15 min fix"
+  },
+  "psf__requests-2931": {
+   "repo": "psf/requests",
+   "subsystem": "requests/models",
+   "difficulty": "15 min - 1 hour"
+  },
+  "psf__requests-5414": {
+   "repo": "psf/requests",
+   "subsystem": "requests/models",
+   "difficulty": "<15 min fix"
+  },
+  "psf__requests-6028": {
+   "repo": "psf/requests",
+   "subsystem": "requests/utils",
+   "difficulty": "15 min - 1 hour"
+  },
+  "pydata__xarray-2905": {
+   "repo": "pydata/xarray",
+   "subsystem": "xarray/core",
+   "difficulty": "15 min - 1 hour"
+  },
+  "pydata__xarray-3095": {
+   "repo": "pydata/xarray",
+   "subsystem": "xarray/core",
+   "difficulty": "15 min - 1 hour"
+  },
+  "pydata__xarray-3151": {
+   "repo": "pydata/xarray",
+   "subsystem": "xarray/core",
+   "difficulty": "15 min - 1 hour"
+  },
+  "pydata__xarray-3305": {
+   "repo": "pydata/xarray",
+   "subsystem": "xarray/core",
+   "difficulty": "15 min - 1 hour"
+  },
+  "pydata__xarray-3677": {
+   "repo": "pydata/xarray",
+   "subsystem": "xarray/core",
+   "difficulty": "15 min - 1 hour"
+  },
+  "pydata__xarray-3993": {
+   "repo": "pydata/xarray",
+   "subsystem": "xarray/core",
+   "difficulty": "1-4 hours"
+  },
+  "pydata__xarray-4075": {
+   "repo": "pydata/xarray",
+   "subsystem": "xarray/core",
+   "difficulty": "<15 min fix"
+  },
+  "pydata__xarray-4094": {
+   "repo": "pydata/xarray",
+   "subsystem": "xarray/core",
+   "difficulty": "<15 min fix"
+  },
+  "pydata__xarray-4356": {
+   "repo": "pydata/xarray",
+   "subsystem": "xarray/core",
+   "difficulty": "<15 min fix"
+  },
+  "pydata__xarray-4629": {
+   "repo": "pydata/xarray",
+   "subsystem": "xarray/core",
+   "difficulty": "<15 min fix"
+  },
+  "pydata__xarray-4687": {
+   "repo": "pydata/xarray",
+   "subsystem": "xarray/core",
+   "difficulty": "15 min - 1 hour"
+  },
+  "pydata__xarray-4695": {
+   "repo": "pydata/xarray",
+   "subsystem": "xarray/core",
+   "difficulty": "15 min - 1 hour"
+  },
+  "pydata__xarray-4966": {
+   "repo": "pydata/xarray",
+   "subsystem": "xarray/coding",
+   "difficulty": "15 min - 1 hour"
+  },
+  "pydata__xarray-6461": {
+   "repo": "pydata/xarray",
+   "subsystem": "xarray/core",
+   "difficulty": "<15 min fix"
+  },
+  "pydata__xarray-6599": {
+   "repo": "pydata/xarray",
+   "subsystem": "xarray/core",
+   "difficulty": "15 min - 1 hour"
+  },
+  "pydata__xarray-6721": {
+   "repo": "pydata/xarray",
+   "subsystem": "xarray/core",
+   "difficulty": "15 min - 1 hour"
+  },
+  "pydata__xarray-6744": {
+   "repo": "pydata/xarray",
+   "subsystem": "xarray/core",
+   "difficulty": "15 min - 1 hour"
+  },
+  "pydata__xarray-6938": {
+   "repo": "pydata/xarray",
+   "subsystem": "xarray/core",
+   "difficulty": "15 min - 1 hour"
+  },
+  "pydata__xarray-6992": {
+   "repo": "pydata/xarray",
+   "subsystem": "xarray/core",
+   "difficulty": ">4 hours"
+  },
+  "pydata__xarray-7229": {
+   "repo": "pydata/xarray",
+   "subsystem": "xarray/core",
+   "difficulty": "15 min - 1 hour"
+  },
+  "pydata__xarray-7233": {
+   "repo": "pydata/xarray",
+   "subsystem": "xarray/core",
+   "difficulty": "15 min - 1 hour"
+  },
+  "pydata__xarray-7393": {
+   "repo": "pydata/xarray",
+   "subsystem": "xarray/core",
+   "difficulty": "15 min - 1 hour"
+  },
+  "pylint-dev__pylint-4551": {
+   "repo": "pylint-dev/pylint",
+   "subsystem": "pylint/pyreverse",
+   "difficulty": "1-4 hours"
+  },
+  "pylint-dev__pylint-4604": {
+   "repo": "pylint-dev/pylint",
+   "subsystem": "pylint/checkers",
+   "difficulty": "15 min - 1 hour"
+  },
+  "pylint-dev__pylint-4661": {
+   "repo": "pylint-dev/pylint",
+   "subsystem": "pylint/config",
+   "difficulty": "15 min - 1 hour"
+  },
+  "pylint-dev__pylint-4970": {
+   "repo": "pylint-dev/pylint",
+   "subsystem": "pylint/checkers",
+   "difficulty": "<15 min fix"
+  },
+  "pylint-dev__pylint-6386": {
+   "repo": "pylint-dev/pylint",
+   "subsystem": "pylint/config",
+   "difficulty": "15 min - 1 hour"
+  },
+  "pylint-dev__pylint-6528": {
+   "repo": "pylint-dev/pylint",
+   "subsystem": "pylint/lint",
+   "difficulty": "15 min - 1 hour"
+  },
+  "pylint-dev__pylint-6903": {
+   "repo": "pylint-dev/pylint",
+   "subsystem": "pylint/lint",
+   "difficulty": "<15 min fix"
+  },
+  "pylint-dev__pylint-7080": {
+   "repo": "pylint-dev/pylint",
+   "subsystem": "pylint/lint",
+   "difficulty": "15 min - 1 hour"
+  },
+  "pylint-dev__pylint-7277": {
+   "repo": "pylint-dev/pylint",
+   "subsystem": "pylint/__init__",
+   "difficulty": "<15 min fix"
+  },
+  "pylint-dev__pylint-8898": {
+   "repo": "pylint-dev/pylint",
+   "subsystem": "pylint/utils",
+   "difficulty": "1-4 hours"
+  },
+  "pytest-dev__pytest-10051": {
+   "repo": "pytest-dev/pytest",
+   "subsystem": "src/_pytest",
+   "difficulty": "15 min - 1 hour"
+  },
+  "pytest-dev__pytest-10081": {
+   "repo": "pytest-dev/pytest",
+   "subsystem": "src/_pytest",
+   "difficulty": "<15 min fix"
+  },
+  "pytest-dev__pytest-10356": {
+   "repo": "pytest-dev/pytest",
+   "subsystem": "src/_pytest",
+   "difficulty": "1-4 hours"
+  },
+  "pytest-dev__pytest-5262": {
+   "repo": "pytest-dev/pytest",
+   "subsystem": "src/_pytest",
+   "difficulty": "<15 min fix"
+  },
+  "pytest-dev__pytest-5631": {
+   "repo": "pytest-dev/pytest",
+   "subsystem": "src/_pytest",
+   "difficulty": "15 min - 1 hour"
+  },
+  "pytest-dev__pytest-5787": {
+   "repo": "pytest-dev/pytest",
+   "subsystem": "src/_pytest",
+   "difficulty": "1-4 hours"
+  },
+  "pytest-dev__pytest-5809": {
+   "repo": "pytest-dev/pytest",
+   "subsystem": "src/_pytest",
+   "difficulty": "<15 min fix"
+  },
+  "pytest-dev__pytest-5840": {
+   "repo": "pytest-dev/pytest",
+   "subsystem": "src/_pytest",
+   "difficulty": "15 min - 1 hour"
+  },
+  "pytest-dev__pytest-6197": {
+   "repo": "pytest-dev/pytest",
+   "subsystem": "src/_pytest",
+   "difficulty": "1-4 hours"
+  },
+  "pytest-dev__pytest-6202": {
+   "repo": "pytest-dev/pytest",
+   "subsystem": "src/_pytest",
+   "difficulty": "<15 min fix"
+  },
+  "pytest-dev__pytest-7205": {
+   "repo": "pytest-dev/pytest",
+   "subsystem": "src/_pytest",
+   "difficulty": "<15 min fix"
+  },
+  "pytest-dev__pytest-7236": {
+   "repo": "pytest-dev/pytest",
+   "subsystem": "src/_pytest",
+   "difficulty": "15 min - 1 hour"
+  },
+  "pytest-dev__pytest-7324": {
+   "repo": "pytest-dev/pytest",
+   "subsystem": "src/_pytest",
+   "difficulty": "15 min - 1 hour"
+  },
+  "pytest-dev__pytest-7432": {
+   "repo": "pytest-dev/pytest",
+   "subsystem": "src/_pytest",
+   "difficulty": "<15 min fix"
+  },
+  "pytest-dev__pytest-7490": {
+   "repo": "pytest-dev/pytest",
+   "subsystem": "src/_pytest",
+   "difficulty": "15 min - 1 hour"
+  },
+  "pytest-dev__pytest-7521": {
+   "repo": "pytest-dev/pytest",
+   "subsystem": "src/_pytest",
+   "difficulty": "<15 min fix"
+  },
+  "pytest-dev__pytest-7571": {
+   "repo": "pytest-dev/pytest",
+   "subsystem": "src/_pytest",
+   "difficulty": "15 min - 1 hour"
+  },
+  "pytest-dev__pytest-7982": {
+   "repo": "pytest-dev/pytest",
+   "subsystem": "src/_pytest",
+   "difficulty": "<15 min fix"
+  },
+  "pytest-dev__pytest-8399": {
+   "repo": "pytest-dev/pytest",
+   "subsystem": "src/_pytest",
+   "difficulty": "15 min - 1 hour"
+  },
+  "scikit-learn__scikit-learn-10297": {
+   "repo": "scikit-learn/scikit-learn",
+   "subsystem": "sklearn/linear_model",
+   "difficulty": "15 min - 1 hour"
+  },
+  "scikit-learn__scikit-learn-10844": {
+   "repo": "scikit-learn/scikit-learn",
+   "subsystem": "sklearn/metrics",
+   "difficulty": "15 min - 1 hour"
+  },
+  "scikit-learn__scikit-learn-10908": {
+   "repo": "scikit-learn/scikit-learn",
+   "subsystem": "sklearn/feature_extraction",
+   "difficulty": "15 min - 1 hour"
+  },
+  "scikit-learn__scikit-learn-11310": {
+   "repo": "scikit-learn/scikit-learn",
+   "subsystem": "sklearn/model_selection",
+   "difficulty": "<15 min fix"
+  },
+  "scikit-learn__scikit-learn-11578": {
+   "repo": "scikit-learn/scikit-learn",
+   "subsystem": "sklearn/linear_model",
+   "difficulty": "15 min - 1 hour"
+  },
+  "scikit-learn__scikit-learn-12585": {
+   "repo": "scikit-learn/scikit-learn",
+   "subsystem": "sklearn/base",
+   "difficulty": "<15 min fix"
+  },
+  "scikit-learn__scikit-learn-12682": {
+   "repo": "scikit-learn/scikit-learn",
+   "subsystem": "examples/decomposition",
+   "difficulty": "15 min - 1 hour"
+  },
+  "scikit-learn__scikit-learn-12973": {
+   "repo": "scikit-learn/scikit-learn",
+   "subsystem": "sklearn/linear_model",
+   "difficulty": "15 min - 1 hour"
+  },
+  "scikit-learn__scikit-learn-13124": {
+   "repo": "scikit-learn/scikit-learn",
+   "subsystem": "sklearn/model_selection",
+   "difficulty": "15 min - 1 hour"
+  },
+  "scikit-learn__scikit-learn-13135": {
+   "repo": "scikit-learn/scikit-learn",
+   "subsystem": "sklearn/preprocessing",
+   "difficulty": "<15 min fix"
+  },
+  "scikit-learn__scikit-learn-13142": {
+   "repo": "scikit-learn/scikit-learn",
+   "subsystem": "sklearn/mixture",
+   "difficulty": "<15 min fix"
+  },
+  "scikit-learn__scikit-learn-13328": {
+   "repo": "scikit-learn/scikit-learn",
+   "subsystem": "sklearn/linear_model",
+   "difficulty": "<15 min fix"
+  },
+  "scikit-learn__scikit-learn-13439": {
+   "repo": "scikit-learn/scikit-learn",
+   "subsystem": "sklearn/pipeline",
+   "difficulty": "<15 min fix"
+  },
+  "scikit-learn__scikit-learn-13496": {
+   "repo": "scikit-learn/scikit-learn",
+   "subsystem": "sklearn/ensemble",
+   "difficulty": "<15 min fix"
+  },
+  "scikit-learn__scikit-learn-13779": {
+   "repo": "scikit-learn/scikit-learn",
+   "subsystem": "sklearn/ensemble",
+   "difficulty": "<15 min fix"
+  },
+  "scikit-learn__scikit-learn-14053": {
+   "repo": "scikit-learn/scikit-learn",
+   "subsystem": "sklearn/tree",
+   "difficulty": "15 min - 1 hour"
+  },
+  "scikit-learn__scikit-learn-14087": {
+   "repo": "scikit-learn/scikit-learn",
+   "subsystem": "sklearn/linear_model",
+   "difficulty": "15 min - 1 hour"
+  },
+  "scikit-learn__scikit-learn-14141": {
+   "repo": "scikit-learn/scikit-learn",
+   "subsystem": "sklearn/utils",
+   "difficulty": "<15 min fix"
+  },
+  "scikit-learn__scikit-learn-14496": {
+   "repo": "scikit-learn/scikit-learn",
+   "subsystem": "sklearn/cluster",
+   "difficulty": "<15 min fix"
+  },
+  "scikit-learn__scikit-learn-14629": {
+   "repo": "scikit-learn/scikit-learn",
+   "subsystem": "sklearn/multioutput",
+   "difficulty": "15 min - 1 hour"
+  },
+  "scikit-learn__scikit-learn-14710": {
+   "repo": "scikit-learn/scikit-learn",
+   "subsystem": "sklearn/ensemble",
+   "difficulty": "15 min - 1 hour"
+  },
+  "scikit-learn__scikit-learn-14894": {
+   "repo": "scikit-learn/scikit-learn",
+   "subsystem": "sklearn/svm",
+   "difficulty": "15 min - 1 hour"
+  },
+  "scikit-learn__scikit-learn-14983": {
+   "repo": "scikit-learn/scikit-learn",
+   "subsystem": "sklearn/model_selection",
+   "difficulty": "<15 min fix"
+  },
+  "scikit-learn__scikit-learn-15100": {
+   "repo": "scikit-learn/scikit-learn",
+   "subsystem": "sklearn/feature_extraction",
+   "difficulty": "15 min - 1 hour"
+  },
+  "scikit-learn__scikit-learn-25102": {
+   "repo": "scikit-learn/scikit-learn",
+   "subsystem": "sklearn/base",
+   "difficulty": "1-4 hours"
+  },
+  "scikit-learn__scikit-learn-25232": {
+   "repo": "scikit-learn/scikit-learn",
+   "subsystem": "sklearn/impute",
+   "difficulty": "<15 min fix"
+  },
+  "scikit-learn__scikit-learn-25747": {
+   "repo": "scikit-learn/scikit-learn",
+   "subsystem": "sklearn/utils",
+   "difficulty": "15 min - 1 hour"
+  },
+  "scikit-learn__scikit-learn-25931": {
+   "repo": "scikit-learn/scikit-learn",
+   "subsystem": "sklearn/ensemble",
+   "difficulty": "15 min - 1 hour"
+  },
+  "scikit-learn__scikit-learn-25973": {
+   "repo": "scikit-learn/scikit-learn",
+   "subsystem": "sklearn/feature_selection",
+   "difficulty": "<15 min fix"
+  },
+  "scikit-learn__scikit-learn-26194": {
+   "repo": "scikit-learn/scikit-learn",
+   "subsystem": "sklearn/metrics",
+   "difficulty": "15 min - 1 hour"
+  },
+  "scikit-learn__scikit-learn-26323": {
+   "repo": "scikit-learn/scikit-learn",
+   "subsystem": "sklearn/compose",
+   "difficulty": "15 min - 1 hour"
+  },
+  "scikit-learn__scikit-learn-9288": {
+   "repo": "scikit-learn/scikit-learn",
+   "subsystem": "sklearn/cluster",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sphinx-doc__sphinx-10323": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/directives",
+   "difficulty": "<15 min fix"
+  },
+  "sphinx-doc__sphinx-10435": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/writers",
+   "difficulty": "<15 min fix"
+  },
+  "sphinx-doc__sphinx-10449": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/ext",
+   "difficulty": "<15 min fix"
+  },
+  "sphinx-doc__sphinx-10466": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/builders",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sphinx-doc__sphinx-10614": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/ext",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sphinx-doc__sphinx-10673": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/environment",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sphinx-doc__sphinx-11445": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/util",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sphinx-doc__sphinx-11510": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/directives",
+   "difficulty": "1-4 hours"
+  },
+  "sphinx-doc__sphinx-7440": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/domains",
+   "difficulty": "<15 min fix"
+  },
+  "sphinx-doc__sphinx-7454": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/domains",
+   "difficulty": "<15 min fix"
+  },
+  "sphinx-doc__sphinx-7462": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/domains",
+   "difficulty": "<15 min fix"
+  },
+  "sphinx-doc__sphinx-7590": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/domains",
+   "difficulty": ">4 hours"
+  },
+  "sphinx-doc__sphinx-7748": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/ext",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sphinx-doc__sphinx-7757": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/util",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sphinx-doc__sphinx-7889": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/ext",
+   "difficulty": "<15 min fix"
+  },
+  "sphinx-doc__sphinx-7910": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/ext",
+   "difficulty": "<15 min fix"
+  },
+  "sphinx-doc__sphinx-7985": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/builders",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sphinx-doc__sphinx-8035": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/ext",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sphinx-doc__sphinx-8056": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/ext",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sphinx-doc__sphinx-8120": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/application",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sphinx-doc__sphinx-8265": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/pycode",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sphinx-doc__sphinx-8269": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/builders",
+   "difficulty": "<15 min fix"
+  },
+  "sphinx-doc__sphinx-8459": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/ext",
+   "difficulty": "<15 min fix"
+  },
+  "sphinx-doc__sphinx-8475": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/builders",
+   "difficulty": "<15 min fix"
+  },
+  "sphinx-doc__sphinx-8548": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/ext",
+   "difficulty": "1-4 hours"
+  },
+  "sphinx-doc__sphinx-8551": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/domains",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sphinx-doc__sphinx-8593": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/ext",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sphinx-doc__sphinx-8595": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/ext",
+   "difficulty": "<15 min fix"
+  },
+  "sphinx-doc__sphinx-8621": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/builders",
+   "difficulty": "<15 min fix"
+  },
+  "sphinx-doc__sphinx-8638": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/domains",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sphinx-doc__sphinx-8721": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/ext",
+   "difficulty": "<15 min fix"
+  },
+  "sphinx-doc__sphinx-9229": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/ext",
+   "difficulty": "1-4 hours"
+  },
+  "sphinx-doc__sphinx-9230": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/util",
+   "difficulty": "<15 min fix"
+  },
+  "sphinx-doc__sphinx-9258": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/domains",
+   "difficulty": "<15 min fix"
+  },
+  "sphinx-doc__sphinx-9281": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/util",
+   "difficulty": "<15 min fix"
+  },
+  "sphinx-doc__sphinx-9320": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/cmd",
+   "difficulty": "<15 min fix"
+  },
+  "sphinx-doc__sphinx-9367": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/pycode",
+   "difficulty": "<15 min fix"
+  },
+  "sphinx-doc__sphinx-9461": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/domains",
+   "difficulty": "1-4 hours"
+  },
+  "sphinx-doc__sphinx-9591": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/domains",
+   "difficulty": "<15 min fix"
+  },
+  "sphinx-doc__sphinx-9602": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/domains",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sphinx-doc__sphinx-9658": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/ext",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sphinx-doc__sphinx-9673": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/ext",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sphinx-doc__sphinx-9698": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/domains",
+   "difficulty": "<15 min fix"
+  },
+  "sphinx-doc__sphinx-9711": {
+   "repo": "sphinx-doc/sphinx",
+   "subsystem": "sphinx/extension",
+   "difficulty": "<15 min fix"
+  },
+  "sympy__sympy-11618": {
+   "repo": "sympy/sympy",
+   "subsystem": "geometry",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-12096": {
+   "repo": "sympy/sympy",
+   "subsystem": "core",
+   "difficulty": "<15 min fix"
+  },
+  "sympy__sympy-12419": {
+   "repo": "sympy/sympy",
+   "subsystem": "matrices",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-12481": {
+   "repo": "sympy/sympy",
+   "subsystem": "combinatorics",
+   "difficulty": "<15 min fix"
+  },
+  "sympy__sympy-12489": {
+   "repo": "sympy/sympy",
+   "subsystem": "combinatorics",
+   "difficulty": "1-4 hours"
+  },
+  "sympy__sympy-13031": {
+   "repo": "sympy/sympy",
+   "subsystem": "matrices",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-13091": {
+   "repo": "sympy/sympy",
+   "subsystem": "polys",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-13372": {
+   "repo": "sympy/sympy",
+   "subsystem": "core",
+   "difficulty": "<15 min fix"
+  },
+  "sympy__sympy-13480": {
+   "repo": "sympy/sympy",
+   "subsystem": "functions",
+   "difficulty": "<15 min fix"
+  },
+  "sympy__sympy-13551": {
+   "repo": "sympy/sympy",
+   "subsystem": "concrete",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-13615": {
+   "repo": "sympy/sympy",
+   "subsystem": "sets",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-13647": {
+   "repo": "sympy/sympy",
+   "subsystem": "matrices",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-13757": {
+   "repo": "sympy/sympy",
+   "subsystem": "polys",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-13798": {
+   "repo": "sympy/sympy",
+   "subsystem": "printing",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-13852": {
+   "repo": "sympy/sympy",
+   "subsystem": "functions",
+   "difficulty": "1-4 hours"
+  },
+  "sympy__sympy-13877": {
+   "repo": "sympy/sympy",
+   "subsystem": "matrices",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-13878": {
+   "repo": "sympy/sympy",
+   "subsystem": "stats",
+   "difficulty": ">4 hours"
+  },
+  "sympy__sympy-13974": {
+   "repo": "sympy/sympy",
+   "subsystem": "physics",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-14248": {
+   "repo": "sympy/sympy",
+   "subsystem": "printing",
+   "difficulty": "1-4 hours"
+  },
+  "sympy__sympy-14531": {
+   "repo": "sympy/sympy",
+   "subsystem": "printing",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-14711": {
+   "repo": "sympy/sympy",
+   "subsystem": "physics",
+   "difficulty": "<15 min fix"
+  },
+  "sympy__sympy-14976": {
+   "repo": "sympy/sympy",
+   "subsystem": "printing",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-15017": {
+   "repo": "sympy/sympy",
+   "subsystem": "tensor",
+   "difficulty": "<15 min fix"
+  },
+  "sympy__sympy-15345": {
+   "repo": "sympy/sympy",
+   "subsystem": "printing",
+   "difficulty": "<15 min fix"
+  },
+  "sympy__sympy-15349": {
+   "repo": "sympy/sympy",
+   "subsystem": "algebras",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-15599": {
+   "repo": "sympy/sympy",
+   "subsystem": "core",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-15809": {
+   "repo": "sympy/sympy",
+   "subsystem": "functions",
+   "difficulty": "<15 min fix"
+  },
+  "sympy__sympy-15875": {
+   "repo": "sympy/sympy",
+   "subsystem": "core",
+   "difficulty": "<15 min fix"
+  },
+  "sympy__sympy-15976": {
+   "repo": "sympy/sympy",
+   "subsystem": "printing",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-16450": {
+   "repo": "sympy/sympy",
+   "subsystem": "simplify",
+   "difficulty": "<15 min fix"
+  },
+  "sympy__sympy-16597": {
+   "repo": "sympy/sympy",
+   "subsystem": "assumptions",
+   "difficulty": "1-4 hours"
+  },
+  "sympy__sympy-16766": {
+   "repo": "sympy/sympy",
+   "subsystem": "printing",
+   "difficulty": "<15 min fix"
+  },
+  "sympy__sympy-16792": {
+   "repo": "sympy/sympy",
+   "subsystem": "utilities",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-16886": {
+   "repo": "sympy/sympy",
+   "subsystem": "crypto",
+   "difficulty": "<15 min fix"
+  },
+  "sympy__sympy-17139": {
+   "repo": "sympy/sympy",
+   "subsystem": "simplify",
+   "difficulty": "<15 min fix"
+  },
+  "sympy__sympy-17318": {
+   "repo": "sympy/sympy",
+   "subsystem": "simplify",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-17630": {
+   "repo": "sympy/sympy",
+   "subsystem": "matrices",
+   "difficulty": "1-4 hours"
+  },
+  "sympy__sympy-17655": {
+   "repo": "sympy/sympy",
+   "subsystem": "geometry",
+   "difficulty": "<15 min fix"
+  },
+  "sympy__sympy-18189": {
+   "repo": "sympy/sympy",
+   "subsystem": "solvers",
+   "difficulty": "<15 min fix"
+  },
+  "sympy__sympy-18199": {
+   "repo": "sympy/sympy",
+   "subsystem": "ntheory",
+   "difficulty": "1-4 hours"
+  },
+  "sympy__sympy-18211": {
+   "repo": "sympy/sympy",
+   "subsystem": "core",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-18698": {
+   "repo": "sympy/sympy",
+   "subsystem": "polys",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-18763": {
+   "repo": "sympy/sympy",
+   "subsystem": "printing",
+   "difficulty": "<15 min fix"
+  },
+  "sympy__sympy-19040": {
+   "repo": "sympy/sympy",
+   "subsystem": "polys",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-19346": {
+   "repo": "sympy/sympy",
+   "subsystem": "printing",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-19495": {
+   "repo": "sympy/sympy",
+   "subsystem": "sets",
+   "difficulty": "<15 min fix"
+  },
+  "sympy__sympy-19637": {
+   "repo": "sympy/sympy",
+   "subsystem": "core",
+   "difficulty": "<15 min fix"
+  },
+  "sympy__sympy-19783": {
+   "repo": "sympy/sympy",
+   "subsystem": "physics",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-19954": {
+   "repo": "sympy/sympy",
+   "subsystem": "combinatorics",
+   "difficulty": "<15 min fix"
+  },
+  "sympy__sympy-20154": {
+   "repo": "sympy/sympy",
+   "subsystem": "utilities",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-20428": {
+   "repo": "sympy/sympy",
+   "subsystem": "polys",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-20438": {
+   "repo": "sympy/sympy",
+   "subsystem": "sets",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-20590": {
+   "repo": "sympy/sympy",
+   "subsystem": "core",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-20801": {
+   "repo": "sympy/sympy",
+   "subsystem": "core",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-20916": {
+   "repo": "sympy/sympy",
+   "subsystem": "printing",
+   "difficulty": "<15 min fix"
+  },
+  "sympy__sympy-21379": {
+   "repo": "sympy/sympy",
+   "subsystem": "core",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-21596": {
+   "repo": "sympy/sympy",
+   "subsystem": "sets",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-21612": {
+   "repo": "sympy/sympy",
+   "subsystem": "printing",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-21847": {
+   "repo": "sympy/sympy",
+   "subsystem": "polys",
+   "difficulty": "<15 min fix"
+  },
+  "sympy__sympy-21930": {
+   "repo": "sympy/sympy",
+   "subsystem": "physics",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-22080": {
+   "repo": "sympy/sympy",
+   "subsystem": "printing",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-22456": {
+   "repo": "sympy/sympy",
+   "subsystem": "codegen",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-22714": {
+   "repo": "sympy/sympy",
+   "subsystem": "geometry",
+   "difficulty": "<15 min fix"
+  },
+  "sympy__sympy-22914": {
+   "repo": "sympy/sympy",
+   "subsystem": "printing",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-23262": {
+   "repo": "sympy/sympy",
+   "subsystem": "utilities",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-23413": {
+   "repo": "sympy/sympy",
+   "subsystem": "polys",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-23534": {
+   "repo": "sympy/sympy",
+   "subsystem": "core",
+   "difficulty": "<15 min fix"
+  },
+  "sympy__sympy-23824": {
+   "repo": "sympy/sympy",
+   "subsystem": "physics",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-23950": {
+   "repo": "sympy/sympy",
+   "subsystem": "sets",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-24066": {
+   "repo": "sympy/sympy",
+   "subsystem": "physics",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-24213": {
+   "repo": "sympy/sympy",
+   "subsystem": "physics",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-24443": {
+   "repo": "sympy/sympy",
+   "subsystem": "combinatorics",
+   "difficulty": "15 min - 1 hour"
+  },
+  "sympy__sympy-24539": {
+   "repo": "sympy/sympy",
+   "subsystem": "polys",
+   "difficulty": "<15 min fix"
+  },
+  "sympy__sympy-24562": {
+   "repo": "sympy/sympy",
+   "subsystem": "core",
+   "difficulty": "<15 min fix"
+  },
+  "sympy__sympy-24661": {
+   "repo": "sympy/sympy",
+   "subsystem": "parsing",
+   "difficulty": "15 min - 1 hour"
+  }
+ },
+ "test_core_high_transfer": [
+  "astropy__astropy-13453",
+  "astropy__astropy-14598",
+  "astropy__astropy-8872",
+  "django__django-10554",
+  "django__django-10880",
+  "django__django-10973",
+  "django__django-11141",
+  "django__django-11163",
+  "django__django-11292",
+  "django__django-11451",
+  "django__django-11551",
+  "django__django-11815",
+  "django__django-11820",
+  "django__django-11999",
+  "django__django-12039",
+  "django__django-12209",
+  "django__django-12273",
+  "django__django-12304",
+  "django__django-12774",
+  "django__django-12965",
+  "django__django-13012",
+  "django__django-13023",
+  "django__django-13028",
+  "django__django-13033",
+  "django__django-13112",
+  "django__django-13417",
+  "django__django-13449",
+  "django__django-13512",
+  "django__django-13568",
+  "django__django-13741",
+  "django__django-13820",
+  "django__django-14034",
+  "django__django-14140",
+  "django__django-14315",
+  "django__django-14351",
+  "django__django-14500",
+  "django__django-14559",
+  "django__django-14631",
+  "django__django-14725",
+  "django__django-14752",
+  "django__django-15161",
+  "django__django-15268",
+  "django__django-15278",
+  "django__django-15280",
+  "django__django-15467",
+  "django__django-15499",
+  "django__django-15503",
+  "django__django-15554",
+  "django__django-15629",
+  "django__django-15695",
+  "django__django-15814",
+  "django__django-15863",
+  "django__django-15987",
+  "django__django-16100",
+  "django__django-16145",
+  "django__django-16315",
+  "django__django-16612",
+  "django__django-16950",
+  "django__django-7530",
+  "matplotlib__matplotlib-20488",
+  "matplotlib__matplotlib-20826",
+  "matplotlib__matplotlib-21568",
+  "matplotlib__matplotlib-22719",
+  "matplotlib__matplotlib-23476",
+  "matplotlib__matplotlib-24637",
+  "matplotlib__matplotlib-24870",
+  "matplotlib__matplotlib-25311",
+  "matplotlib__matplotlib-25479",
+  "matplotlib__matplotlib-26466",
+  "pydata__xarray-2905",
+  "pydata__xarray-3677",
+  "pydata__xarray-4094",
+  "pydata__xarray-4687",
+  "pydata__xarray-4695",
+  "pydata__xarray-7229",
+  "pydata__xarray-7393",
+  "pytest-dev__pytest-10051",
+  "pytest-dev__pytest-10081",
+  "pytest-dev__pytest-5262",
+  "pytest-dev__pytest-5787",
+  "pytest-dev__pytest-6202",
+  "pytest-dev__pytest-7490",
+  "scikit-learn__scikit-learn-14087",
+  "scikit-learn__scikit-learn-25931",
+  "sphinx-doc__sphinx-10466",
+  "sphinx-doc__sphinx-7440",
+  "sphinx-doc__sphinx-7590",
+  "sphinx-doc__sphinx-7889",
+  "sphinx-doc__sphinx-8035",
+  "sphinx-doc__sphinx-8459",
+  "sphinx-doc__sphinx-8595",
+  "sphinx-doc__sphinx-8721",
+  "sphinx-doc__sphinx-9258",
+  "sphinx-doc__sphinx-9281",
+  "sympy__sympy-12419",
+  "sympy__sympy-12481",
+  "sympy__sympy-13615",
+  "sympy__sympy-14248",
+  "sympy__sympy-18763",
+  "sympy__sympy-19637",
+  "sympy__sympy-19783",
+  "sympy__sympy-20428",
+  "sympy__sympy-20801",
+  "sympy__sympy-21379",
+  "sympy__sympy-21612",
+  "sympy__sympy-21847",
+  "sympy__sympy-22914",
+  "sympy__sympy-24066"
+ ]
+}

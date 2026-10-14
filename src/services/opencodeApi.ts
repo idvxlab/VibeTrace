@@ -3,10 +3,13 @@ import type {
   OcTodo,
   OcMessage,
   OcPendingQuestionItem,
+  OcPendingPermissionItem,
+  OcPermissionReply,
 } from '../types/opencode'
 import { applySessionDemoOverlay } from '../caseStudy/applySessionDemoOverlay'
 import { isCaseStudyDemoEnabled } from '../caseStudy'
 import { normalizeSessionDirectory, sameDirectory } from '../utils/sessionFolders'
+import { resolveVibeTraceDefaultModelRef } from '../config/opencodeDefaults'
 
 /**
  * OpenCode HTTP base URL — injected at build time by `vite.config.ts`:
@@ -421,17 +424,18 @@ export async function sendMessage(
     },
   }))
   const parts: UserMessagePartBody[] = [...imageParts, { type: 'text', text }]
+  // Always send an explicit model. Priority: caller (dropdown) → VibeTrace default.
   const modelRef =
-    (options?.model && options.model.trim()) ||
-    (typeof import.meta.env.VITE_OPENCODE_DEFAULT_MODEL === 'string' && import.meta.env.VITE_OPENCODE_DEFAULT_MODEL.trim()) ||
-    undefined
-  const modelBody = modelRef ? parseModelRefToBody(modelRef) : undefined
+    (options?.model && options.model.trim()) || resolveVibeTraceDefaultModelRef()
+  const modelBody = parseModelRefToBody(modelRef)
+  if (!modelBody) {
+    throw new Error(`Invalid model ref for sendMessage: ${modelRef}`)
+  }
   const agent =
     (options?.agent && options.agent.trim()) ||
     (typeof import.meta.env.VITE_OPENCODE_DEFAULT_AGENT === 'string' && import.meta.env.VITE_OPENCODE_DEFAULT_AGENT.trim()) ||
     undefined
-  const reqBody: Record<string, unknown> = { parts }
-  if (modelBody) reqBody.model = modelBody
+  const reqBody: Record<string, unknown> = { parts, model: modelBody }
   if (agent) reqBody.agent = agent
 
   const res = await fetch(url, {
@@ -454,6 +458,7 @@ export async function abortSession(sessionId: string, directory?: string): Promi
   const res = await fetch(url, {
     method: 'POST',
     headers: withDirectoryHeaders({}, directory),
+    signal: fetchSignal(),
   })
   const bodyText = await res.text()
   if (!res.ok) {
@@ -555,6 +560,243 @@ export async function rejectQuestion(requestId: string, directory?: string): Pro
   }
 }
 
+// ===== Permission (SSE `permission.asked`, POST `/permission/{id}/reply`) =====
+
+function normalizePendingPermissionList(raw: unknown): OcPendingPermissionItem[] {
+  const rows: unknown[] = (() => {
+    if (Array.isArray(raw)) return raw
+    if (raw && typeof raw === 'object') {
+      const o = raw as Record<string, unknown>
+      for (const k of ['data', 'items', 'pending', 'result', 'permissions']) {
+        const v = o[k]
+        if (Array.isArray(v)) return v
+      }
+    }
+    return []
+  })()
+
+  const out: OcPendingPermissionItem[] = []
+  for (const row of rows) {
+    const normalized = normalizePermissionRequest(row)
+    if (normalized) out.push(normalized)
+  }
+  return out
+}
+
+/**
+ * OpenCode emits permission asks in several envelopes:
+ * - BusEvent: `{ type, properties: PermissionRequest }`
+ * - Durable/global: `{ type, data: PermissionRequest, location?, durable? }`
+ * - Nested: `{ request: PermissionRequest }`
+ * Prefer unwrapping before reading id/session fields so v1 `data` events are not dropped.
+ */
+function unwrapPermissionEnvelope(
+  raw: Record<string, unknown>,
+  extras?: { directory?: string; askedAt?: number; sessionID?: string },
+): OcPendingPermissionItem | null {
+  for (const key of ['data', 'properties', 'request', 'permission'] as const) {
+    const nested = raw[key]
+    if (!nested || typeof nested !== 'object' || Array.isArray(nested)) continue
+    const nestedObj = nested as Record<string, unknown>
+    // Skip opaque metadata bags that are not request-shaped
+    if (key === 'permission' && typeof nestedObj.id !== 'string' && typeof nestedObj.sessionID !== 'string') {
+      continue
+    }
+    const fromNested = normalizePermissionRequest(nestedObj, extras)
+    if (fromNested) return fromNested
+  }
+  return null
+}
+
+/** Normalize PermissionNext / v2 / loose SSE property shapes into OcPendingPermissionRequest */
+export function normalizePermissionRequest(
+  raw: unknown,
+  extras?: { directory?: string; askedAt?: number; sessionID?: string },
+): OcPendingPermissionItem | null {
+  if (!raw || typeof raw !== 'object') return null
+  const o = raw as Record<string, unknown>
+
+  const unwrapped = unwrapPermissionEnvelope(o, extras)
+  if (unwrapped) return unwrapped
+
+  const idRaw =
+    (typeof o.id === 'string' && o.id) ||
+    (typeof o.requestID === 'string' && o.requestID) ||
+    (typeof o.permissionID === 'string' && o.permissionID) ||
+    (typeof o.permissionId === 'string' && o.permissionId) ||
+    null
+  // Durable envelopes also carry an event id (`evt_…`); only `per…` ids are permission asks.
+  const id = idRaw && !idRaw.startsWith('evt_') ? idRaw : null
+  const sessionID =
+    (typeof o.sessionID === 'string' && o.sessionID) ||
+    (typeof o.sessionId === 'string' && o.sessionId) ||
+    (typeof extras?.sessionID === 'string' && extras.sessionID) ||
+    null
+  if (!id || !sessionID) return null
+
+  // Avoid treating bus event envelopes as permission kinds
+  const rawPermission =
+    (typeof o.permission === 'string' && o.permission) ||
+    (typeof o.action === 'string' && o.action) ||
+    (typeof o.toolName === 'string' && o.toolName) ||
+    null
+  const permission = rawPermission || 'unknown'
+
+  const patternsRaw = o.patterns ?? o.resources ?? o.pattern ?? o.paths
+  const patterns = Array.isArray(patternsRaw)
+    ? patternsRaw.filter((p): p is string => typeof p === 'string')
+    : typeof patternsRaw === 'string'
+      ? [patternsRaw]
+      : []
+
+  const alwaysRaw = o.always ?? o.save
+  const always = Array.isArray(alwaysRaw)
+    ? alwaysRaw.filter((p): p is string => typeof p === 'string')
+    : undefined
+
+  const metadata =
+    o.metadata && typeof o.metadata === 'object' && !Array.isArray(o.metadata)
+      ? (o.metadata as Record<string, unknown>)
+      : undefined
+
+  let tool: { messageID: string; callID: string } | undefined
+  const toolRaw = o.tool ?? o.source
+  if (toolRaw && typeof toolRaw === 'object') {
+    const t = toolRaw as Record<string, unknown>
+    const messageID =
+      (typeof t.messageID === 'string' && t.messageID) ||
+      (typeof t.messageId === 'string' && t.messageId) ||
+      ''
+    const callID =
+      (typeof t.callID === 'string' && t.callID) || (typeof t.callId === 'string' && t.callId) || ''
+    if (messageID && callID) tool = { messageID, callID }
+  }
+
+  const askedAt =
+    extras?.askedAt ??
+    (typeof o.askedAt === 'number' && Number.isFinite(o.askedAt) ? o.askedAt : undefined)
+
+  return {
+    id,
+    sessionID,
+    permission,
+    patterns,
+    metadata,
+    always,
+    tool,
+    directory: extras?.directory ?? (typeof o.directory === 'string' ? o.directory : undefined),
+    askedAt,
+  }
+}
+
+export async function getPendingPermissions(
+  directory?: string,
+  options?: { sessionID?: string },
+): Promise<OcPendingPermissionItem[]> {
+  const headers = withDirectoryHeaders({}, directory)
+
+  const candidates: string[] = []
+  // Prefer the global pending list — session-scoped `/api/session/.../permission`
+  // often returns `{ data: [] }` even while an ask is still live (OpenCode 1.18).
+  {
+    const params = new URLSearchParams()
+    if (directory) params.set('directory', directory)
+    if (options?.sessionID) params.set('sessionID', options.sessionID)
+    const qs = params.toString()
+    candidates.push(qs ? `${BASE}/permission?${qs}` : `${BASE}/permission`)
+    candidates.push(qs ? `${BASE}/api/permission/request?${qs}` : `${BASE}/api/permission/request`)
+  }
+  if (options?.sessionID) {
+    const qs = directory ? `?directory=${encodeURIComponent(directory)}` : ''
+    candidates.push(`${BASE}/api/session/${encodeURIComponent(options.sessionID)}/permission${qs}`)
+    candidates.push(`${BASE}/session/${encodeURIComponent(options.sessionID)}/permission${qs}`)
+    // Global list without session query (filter client-side)
+    const params = new URLSearchParams()
+    if (directory) params.set('directory', directory)
+    const gqs = params.toString()
+    candidates.push(gqs ? `${BASE}/permission?${gqs}` : `${BASE}/permission`)
+    candidates.push(gqs ? `${BASE}/api/permission/request?${gqs}` : `${BASE}/api/permission/request`)
+  }
+
+  let lastErr = ''
+  const byId = new Map<string, OcPendingPermissionItem>()
+  let sawOk = false
+  for (const url of candidates) {
+    try {
+      const res = await fetch(url, { headers })
+      if (!res.ok) {
+        lastErr = `${res.status} ${await res.text()}`
+        continue
+      }
+      sawOk = true
+      const data = await res.json()
+      let list = normalizePendingPermissionList(data)
+      if (options?.sessionID) {
+        list = list.filter((p) => p.sessionID === options.sessionID)
+      }
+      for (const item of list) {
+        byId.set(item.id, {
+          ...item,
+          directory: item.directory ?? directory,
+          askedAt: item.askedAt ?? Date.now(),
+        })
+      }
+      // Keep scanning: an earlier endpoint may be empty while a later one has asks.
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : String(e)
+    }
+  }
+  if (!sawOk && byId.size === 0) {
+    throw new Error(`getPendingPermissions failed: ${lastErr || 'no endpoint'}`)
+  }
+  return [...byId.values()]
+}
+
+export async function replyToPermission(
+  requestId: string,
+  reply: OcPermissionReply,
+  options?: { sessionID?: string; directory?: string; message?: string },
+): Promise<void> {
+  const body: { reply: OcPermissionReply; message?: string } = { reply }
+  if (options?.message) body.message = options.message
+  const headers = withDirectoryHeaders({ 'Content-Type': 'application/json' }, options?.directory)
+  const payload = JSON.stringify(body)
+
+  const candidates: string[] = [
+    `${BASE}/permission/${encodeURIComponent(requestId)}/reply`,
+  ]
+  if (options?.sessionID) {
+    candidates.unshift(
+      `${BASE}/api/session/${encodeURIComponent(options.sessionID)}/permission/${encodeURIComponent(requestId)}/reply`,
+    )
+    candidates.push(
+      `${BASE}/session/${encodeURIComponent(options.sessionID)}/permission/${encodeURIComponent(requestId)}/reply`,
+    )
+    // Deprecated legacy path still present on some OpenCode builds
+    candidates.push(
+      `${BASE}/session/${encodeURIComponent(options.sessionID)}/permissions/${encodeURIComponent(requestId)}`,
+    )
+  }
+
+  let lastErr = ''
+  for (const url of candidates) {
+    try {
+      const res = await fetch(url, { method: 'POST', headers, body: payload })
+      const bodyText = await res.text()
+      if (res.ok) return
+      lastErr = `${res.status} ${bodyText}`
+      // 404 on path → try next candidate; 404 PermissionNotFoundError should still surface after all tries
+      if (res.status !== 404 && res.status !== 405) {
+        throw new Error(`replyToPermission failed: ${lastErr}`)
+      }
+    } catch (e) {
+      if (e instanceof Error && e.message.startsWith('replyToPermission failed:')) throw e
+      lastErr = e instanceof Error ? e.message : String(e)
+    }
+  }
+  throw new Error(`replyToPermission failed: ${lastErr || 'no endpoint'}`)
+}
+
 // ===== SSE (fetch stream — supports custom `event:` names) =====
 
 const SSE_RECONNECT_MS = 2500
@@ -614,10 +856,15 @@ async function streamGlobalSse(
   const decoder = new TextDecoder()
   let buf = ''
 
-  const dispatchLine = createSseLineDispatcher((_eventName, dataStr) => {
+  const dispatchLine = createSseLineDispatcher((eventName, dataStr) => {
     try {
       const parsed = JSON.parse(dataStr) as Record<string, unknown>
-      onEvent(parsed)
+      // OpenCode usually puts `type` inside JSON; keep SSE `event:` as fallback.
+      if (eventName && eventName !== 'message' && parsed && typeof parsed === 'object') {
+        onEvent({ ...parsed, __sseEventName: eventName })
+      } else {
+        onEvent(parsed)
+      }
     } catch {
       /* ignore heartbeats / non-JSON frames */
     }

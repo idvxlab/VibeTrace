@@ -77,6 +77,10 @@ export interface MemoryWorkerErrorDiagnosisBatch {
   items: MemoryWorkerErrorDiagnosis[]
   reason?: string
   error?: string
+  /** True when worker reused an existing summary for this panel (sessionId + subtaskId). */
+  cached?: boolean
+  sessionId?: string
+  subtaskId?: string
 }
 
 export interface MemoryWorkerTaskSegment {
@@ -114,6 +118,7 @@ export interface TaskSkillRecord {
   rationale?: string
   createdAt?: string
   feedbackRunDir?: string
+  engine?: string
 }
 
 export interface SkillDistillChange {
@@ -330,6 +335,30 @@ export async function fetchPanelAnalysisForSession(
   return parseMemoryWorkerJson<MemoryWorkerErrorDiagnosisBatch>(text, '/panel-analysis')
 }
 
+/** Analyze one sealed panel independently of ingest / skill digest. */
+export async function requestPanelAnalysis(params: {
+  sessionId: string
+  subtaskId: string
+  directory?: string
+  parentSessionID?: string
+}): Promise<MemoryWorkerErrorDiagnosisBatch> {
+  const res = await fetch(`${BASE}/panel-analysis`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      sessionId: params.sessionId,
+      subtaskId: params.subtaskId,
+      ...(params.directory?.trim() ? { directory: params.directory.trim() } : {}),
+      ...(params.parentSessionID?.trim() ? { parentSessionID: params.parentSessionID.trim() } : {}),
+    }),
+  })
+  const text = await res.text()
+  if (!res.ok) {
+    throw new Error(`memory-worker POST /panel-analysis failed: ${res.status} ${text}`)
+  }
+  return parseMemoryWorkerJson<MemoryWorkerErrorDiagnosisBatch>(text, 'POST /panel-analysis')
+}
+
 export async function fetchTaskSegmentsForSession(
   sessionId: string,
 ): Promise<MemoryWorkerTaskSegmentBatch> {
@@ -380,6 +409,35 @@ export async function distillTaskFeedback(req: FeedbackDistillRequest): Promise<
     throw new Error(`memory-worker /task-feedback-distill failed: ${res.status} ${text}`)
   }
   return parseMemoryWorkerJson<TaskSkillsResult & { runDir?: string; skill?: TaskSkillRecord }>(text, '/task-feedback-distill')
+}
+
+export interface SaveExperimentReportRequest {
+  directory: string
+  report: unknown
+  filename?: string
+}
+
+export interface SaveExperimentReportResult {
+  ok: boolean
+  path?: string
+  filename?: string
+  error?: string
+}
+
+/** Persist an experiment report JSON into `{workspace}/vibetrace-behavior/`. */
+export async function saveExperimentReport(
+  req: SaveExperimentReportRequest,
+): Promise<SaveExperimentReportResult> {
+  const res = await fetch(`${BASE}/experiment-report`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  })
+  const text = await res.text()
+  if (!res.ok) {
+    throw new Error(`memory-worker /experiment-report failed: ${res.status} ${text}`)
+  }
+  return parseMemoryWorkerJson<SaveExperimentReportResult>(text, '/experiment-report')
 }
 
 /** @deprecated Prefer `ingestTraceReference`; full trace payloads are kept for compatibility. */

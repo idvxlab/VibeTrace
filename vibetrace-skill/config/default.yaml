@@ -1,0 +1,97 @@
+dataset:
+  name: "princeton-nlp/SWE-bench_Verified"
+  split: "test"
+  split_file: "data/swe-bench-verified/split_subsystem_v1.json"
+  sample_ratio: 0.10
+  train_sample_ratio: 0.084
+  test_sample_ratio: 0.14
+  train_ratio: 0.60
+  subsystem_clustered_stream: true
+  shuffle_seed: 42
+  difficulty_in: ["<15 min fix", "15 min - 1 hour", "1-4 hours"]
+  cache_dir: "data/swe-bench-verified"
+  repos_dir: "repos/swe-bench-verified"
+
+opencode:
+  model:
+    - "relay/deepseek-v4-flash"
+  variant: null
+  timeout_sec: 3600
+  timeout_by_difficulty:
+    "<15 min fix":     1800
+    "15 min - 1 hour": 3600
+    "1-4 hours":       14400
+  max_attempts: 3
+  skip_permissions: true
+  disable_external_skills: true
+  isolate_state: true
+  isolate_python_env: true
+  python_env_system_site_packages: true
+  state_dir: null
+  extra_args: []
+
+budget:
+  difficulty_budgets:
+    "<15 min fix":     {usd: 0.02, time:  600.0, call:  60}
+    "15 min - 1 hour": {usd: 0.04, time:  900.0, call:  90}
+    "1-4 hours":       {usd: 0.05, time: 1200.0, call: 100}
+
+pricing:
+  in_hit:  0.0028
+  in_miss: 0.14
+  out:     0.28
+
+prompts:
+  root: prompts
+
+estimator:
+  model: "relay/deepseek-v4-flash"
+  timeout_sec: 300
+  retries: 2
+  reusable_min: 0.34
+  informative_min: 0.50
+  risk_max: 0.40
+
+distiller:
+  max_skills_per_patch: 3
+  model: null
+  max_skill_chars: 1200
+  reuse_gate_min: 0.50
+  correctness_gate_min: 0.50
+  score_threshold: 0.10
+  score_retries: 5
+  timeout_sec: 300
+
+evaluator:
+  backend: "docker"
+  max_workers: 12
+  run_id_prefix: "skillevolve"
+  timeout_sec: 3600
+  crun:
+    image_namespace: "swebench"
+    arch: "x86_64"
+    rootfs_cache: "data/swe-bench-verified/crun-rootfs"
+    blob_cache: null
+    # null means use HTTPS_PROXY from the environment, if present.
+    proxy: null
+    net_timeout_sec: 120
+    pull_deadline_sec: 1800
+    registry: "registry-1.docker.io"
+    registry_auth: "https://auth.docker.io/token"
+    auth_service: "registry.docker.io"
+
+feedback:
+  enable_fork: true
+
+run:
+  workspace_dir: "/tmp/vibetrace_workspaces"
+  results_root: "results"
+  output_dir: "results/results_manual"
+  resume: false
+  log_level: "INFO"
+  concurrency: 24
+  settings: ["base", "trace-only", "trace-fb"]
+  counterbalance_settings: true
+  # seeds: [42, 43, 44]
+  seeds: [42]
+  repeats: 3

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { OcSession } from '../types/opencode'
 import { folderDisplayName } from '../utils/sessionFolders'
+import ExperimentBar from '../experiment/ExperimentBar'
+import { experimentTelemetry } from '../experiment/telemetry'
 
 interface SidebarProps {
   /** Sessions in the selected folder (sorted, filtered). */
@@ -126,76 +128,94 @@ export default function Sidebar({
       <div
         style={{
           width: RAIL_WIDTH,
+          height: '100%',
           background: '#FAFAFA',
           borderRight: '1px solid #E8E8E8',
           display: 'flex',
           flexDirection: 'column',
-          alignItems: 'center',
-          paddingTop: 8,
-          paddingBottom: 8,
-          gap: 6,
-          overflowY: 'auto',
+          alignItems: 'stretch',
+          flexShrink: 0,
         }}
       >
-        {onAddDirectory && (
-          <button
-            type="button"
-            title="Add workspace directory"
-            onClick={onAddDirectory}
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 8,
-              border: '1px solid #D8C2EB',
-              background: 'linear-gradient(180deg, #FCF8FF 0%, #F3E9FB 100%)',
-              cursor: 'pointer',
-              color: '#6D35A1',
-              fontSize: 18,
-              fontWeight: 500,
-              lineHeight: '28px',
-              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.75)',
-            }}
-          >
-            +
-          </button>
-        )}
-        {directories.map((dir) => {
-          const active = dir === selectedDirectory
-          const label = folderDisplayName(dir).slice(0, 2)
-          return (
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            paddingTop: 8,
+            paddingBottom: 8,
+            gap: 6,
+            overflowY: 'auto',
+          }}
+        >
+          {onAddDirectory && (
             <button
-              key={dir || '__root__'}
               type="button"
-              title={dir}
-              onClick={() => onSelectDirectory(dir)}
-              onContextMenu={(e) => {
-                if (!onCloseDirectory) return
-                e.preventDefault()
-                setDirMenu({ x: e.clientX, y: e.clientY, dir })
-              }}
+              title="Add workspace directory"
+              onClick={onAddDirectory}
               style={{
                 width: 32,
-                minHeight: 32,
-                padding: '4px 2px',
+                height: 32,
                 borderRadius: 8,
-                border: active ? '1px solid #8445BC' : '1px solid transparent',
-                background: active ? '#F0E6FA' : 'transparent',
+                border: '1px solid #D8C2EB',
+                background: 'linear-gradient(180deg, #FCF8FF 0%, #F3E9FB 100%)',
                 cursor: 'pointer',
-                fontSize: 11,
-                fontWeight: 600,
-                color: active ? '#5B2D82' : '#525252',
-                lineHeight: 1.15,
-                wordBreak: 'break-all',
+                color: '#6D35A1',
+                fontSize: 18,
+                fontWeight: 500,
+                lineHeight: '28px',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.75)',
+                flexShrink: 0,
               }}
             >
-              {label}
+              +
             </button>
-          )
-        })}
+          )}
+          {directories.map((dir) => {
+            const active = dir === selectedDirectory
+            const label = folderDisplayName(dir).slice(0, 2)
+            return (
+              <button
+                key={dir || '__root__'}
+                type="button"
+                title={dir}
+                onClick={() => onSelectDirectory(dir)}
+                onContextMenu={(e) => {
+                  if (!onCloseDirectory) return
+                  e.preventDefault()
+                  setDirMenu({ x: e.clientX, y: e.clientY, dir })
+                }}
+                style={{
+                  width: 32,
+                  minHeight: 32,
+                  padding: '4px 2px',
+                  borderRadius: 8,
+                  border: active ? '1px solid #8445BC' : '1px solid transparent',
+                  background: active ? '#F0E6FA' : 'transparent',
+                  cursor: 'pointer',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: active ? '#5B2D82' : '#525252',
+                  lineHeight: 1.15,
+                  wordBreak: 'break-all',
+                  flexShrink: 0,
+                }}
+              >
+                {label}
+              </button>
+            )
+          })}
+        </div>
+
+        <ExperimentBar directory={selectedDirectory || ''} />
       </div>
 
       {/* Session list */}
       <div
+        onPointerEnter={() => experimentTelemetry.enterPanelFocus('session')}
+        onPointerLeave={() => experimentTelemetry.leavePanelFocus('session')}
         style={{
           width: sessionListWidth,
           height: '100%',
@@ -321,7 +341,10 @@ export default function Sidebar({
               >
                 <button
                   type="button"
-                  onClick={() => onSelectSession(session.id)}
+                  onClick={() => {
+                    experimentTelemetry.onSessionPanelInteract(session.id)
+                    onSelectSession(session.id)
+                  }}
                   style={{
                     flex: 1,
                     minWidth: 0,
@@ -394,6 +417,7 @@ export default function Sidebar({
             ))
           )}
         </div>
+
         {onSessionListResizePointerDown ? (
           <div
             role="separator"

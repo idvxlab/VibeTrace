@@ -164,6 +164,18 @@ export type CompactionPart = {
   messageID: string
   /** Optional summary/placeholder on some server builds */
   text?: string
+  /** OpenCode SDK: whether compaction was automatic */
+  auto?: boolean
+  /** OpenCode SDK: context overflow trigger */
+  overflow?: boolean
+}
+
+/** Live SSE compaction marker merged into action flow when message parts lag */
+export type OcSessionCompactionEvent = {
+  sessionID: string
+  time: number
+  status: 'running' | 'completed'
+  detail?: string
 }
 
 export type OcMessagePart =
@@ -284,6 +296,49 @@ export type OcPendingQuestionRequest = {
   directory?: string
 }
 
+/** Reply values for POST `/permission/{requestID}/reply` */
+export type OcPermissionReply = 'once' | 'always' | 'reject'
+
+/**
+ * Pending permission request from SSE `permission.asked` (or GET `/permission`).
+ * Field names cover both PermissionNext (`permission`/`patterns`) and newer v2 (`action`/`resources`).
+ */
+export type OcPendingPermissionRequest = {
+  id: string
+  sessionID: string
+  /** Permission kind / action name (e.g. bash, edit, read) */
+  permission: string
+  patterns: string[]
+  metadata?: Record<string, unknown>
+  /** Patterns that would be auto-approved if the user picks "always" */
+  always?: string[]
+  tool?: { messageID: string; callID: string }
+  /** Copied from SSE root; replies must include x-opencode-directory */
+  directory?: string
+  /** When the ask was observed locally (SSE time or hydrate time) */
+  askedAt?: number
+}
+
+/** One row from GET `/permission` (or session-scoped permission list) */
+export type OcPendingPermissionItem = OcPendingPermissionRequest
+
+/**
+ * Permission asks kept for the action-flow trajectory (survive after Allow/Reject).
+ * Live dialog still uses `OcPendingPermissionRequest`; this is the durable trail.
+ */
+export type OcPermissionTraceEvent = {
+  id: string
+  sessionID: string
+  permission: string
+  patterns: string[]
+  askedAt: number
+  repliedAt?: number
+  reply?: OcPermissionReply
+  /** pending while dialog open; completed for once/always; error for reject */
+  status: ActionStatus
+  tool?: { messageID: string; callID: string }
+}
+
 // ===== D3 Event types =====
 export interface FlowEvent {
   type: 'thinking' | 'tool' | 'file-write' | 'bash' | 'error' | 'text' | 'step'
@@ -298,5 +353,9 @@ export interface OcSseActionEvent {
   type: 'permission.asked' | 'session.compacted' | string
   time: number
   sessionID?: string
+  /** Populated for permission.asked so action flow can show a richer detail string */
+  permission?: OcPendingPermissionRequest
+  /** Populated for session.compacted / session.next.compaction.* */
+  compaction?: { status: 'running' | 'completed'; detail?: string }
   raw: unknown
 }

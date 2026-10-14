@@ -12,6 +12,10 @@ import {
 import { mergeMessagesForActionTooltipLookup } from './actionTooltipMapping'
 import { getMessages } from '../services/opencodeApi'
 import { STORAGE_KEYS } from '../config/storageKeys'
+import {
+  buildSubtaskCardMetricsFromMessages,
+  type SubtaskCardMetrics,
+} from './subtaskMetrics'
 
 /** Passed when forking from a SubtaskCard action menu */
 export type ForkFromActionContext = {
@@ -96,6 +100,49 @@ export function getForkPanelSnapshotBundle(sessionId: string): ForkPanelSnapshot
   } catch {
     return null
   }
+}
+
+/**
+ * Metrics for the shared pre-fork prefix only (actions up to and including the fork anchor).
+ * Used to top-up the forked panel strip / filter so they include history shown from the snapshot.
+ */
+export function buildForkPrefixMetricsFromSnapshot(
+  bundle: ForkPanelSnapshotBundle,
+  nowMs: number = Date.now(),
+): SubtaskCardMetrics | null {
+  const oldActions = bundle.snapshot.flowActions
+  const anchorMessageId = bundle.forkAnchorMessageId
+  const anchorPartId = bundle.forkAnchorPartId
+  const oldAnchorIdx = oldActions.findIndex(
+    (a) =>
+      a.messageID === anchorMessageId && (anchorPartId ? a.partId === anchorPartId : true),
+  )
+  if (oldAnchorIdx < 0) return null
+
+  const prefixActions = oldActions.slice(0, oldAnchorIdx + 1)
+  const parentMsgIds = new Set(
+    prefixActions
+      .filter((a) => a.source !== 'child-session' && a.messageID)
+      .map((a) => a.messageID as string),
+  )
+  const childMsgIds = new Set(
+    prefixActions
+      .filter((a) => a.source === 'child-session' && a.messageID)
+      .map((a) => a.messageID as string),
+  )
+  const tooltip = bundle.snapshot.tooltipMessages
+  const assistantMessages = tooltip.filter(
+    (m) => m.info.role === 'assistant' && parentMsgIds.has(m.info.id),
+  )
+  const additionalMessages = tooltip.filter((m) => childMsgIds.has(m.info.id))
+  if (assistantMessages.length === 0 && additionalMessages.length === 0) return null
+
+  return buildSubtaskCardMetricsFromMessages({
+    title: bundle.snapshot.subtaskId,
+    assistantMessages,
+    additionalMessages,
+    nowMs,
+  })
 }
 
 export async function buildFlowSnapshotForSubtask(

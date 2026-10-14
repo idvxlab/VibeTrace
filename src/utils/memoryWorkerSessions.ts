@@ -49,15 +49,23 @@ function isMemoryWorkerPipelineSession(
   return isMemoryWorkerInternalSession(session)
 }
 
-/** Hide memory_worker background sessions from sidebar history. */
+/** Keep memory_worker background sessions visible in sidebar history (still skip trace ingest to avoid loops). */
 export function shouldHideSessionFromHistory(
+  _sessionId: string,
+  _session: Pick<OcSession, 'id' | 'title'> | null | undefined,
+): boolean {
+  return false
+}
+
+export function shouldSkipTraceIngestForSession(
   sessionId: string,
-  session: Pick<OcSession, 'id' | 'title'> | null | undefined,
+  session: Pick<OcSession, 'title'> | null | undefined,
 ): boolean {
   return isMemoryWorkerPipelineSession(sessionId, session)
 }
 
-export function shouldSkipTraceIngestForSession(
+/** mw-internal analyzer traces must not run panel-analysis (avoids endless nested diagnosis). */
+export function shouldSkipPanelAnalysisForSession(
   sessionId: string,
   session: Pick<OcSession, 'title'> | null | undefined,
 ): boolean {
@@ -75,17 +83,31 @@ export function registerMemoryWorkerInternalSessionIds(ids: Iterable<string>): v
   if (changed) persistBlocklist()
 }
 
+function collectDiagnosisSessionIds(
+  items: Array<{ diagnosisSessionID?: unknown } | null | undefined> | undefined,
+): string[] {
+  const ids: string[] = []
+  for (const item of items ?? []) {
+    if (!item || typeof item !== 'object') continue
+    const sid = typeof item.diagnosisSessionID === 'string' ? item.diagnosisSessionID.trim() : ''
+    if (sid) ids.push(sid)
+  }
+  return ids
+}
+
+export function collectInternalSessionIdsFromPanelAnalysis(
+  items: Array<{ diagnosisSessionID?: unknown } | null | undefined> | undefined,
+): string[] {
+  return collectDiagnosisSessionIds(items)
+}
+
 export function collectInternalSessionIdsFromIngest(result: MemoryWorkerIngestResult): string[] {
   const ids: string[] = []
   const analyzerId = typeof result.analyzerSessionID === 'string' ? result.analyzerSessionID.trim() : ''
   if (analyzerId) ids.push(analyzerId)
   const writerId = typeof result.writerSessionID === 'string' ? result.writerSessionID.trim() : ''
   if (writerId) ids.push(writerId)
-  const diagnosisItems = result.errorDiagnosis?.items ?? []
-  for (const item of diagnosisItems) {
-    const sid = typeof item.diagnosisSessionID === 'string' ? item.diagnosisSessionID.trim() : ''
-    if (sid) ids.push(sid)
-  }
+  ids.push(...collectDiagnosisSessionIds(result.errorDiagnosis?.items))
   const writerResults = result.writerResults
   if (Array.isArray(writerResults)) {
     for (const item of writerResults) {

@@ -1,6 +1,22 @@
-import { Fragment, type RefObject, useEffect, useId, useMemo, useRef, useState } from 'react'
+import {
+  Fragment,
+  type RefObject,
+  type WheelEvent,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { Tooltip } from 'react-tooltip'
-import type { MappedAction, OcMessage, OcMessagePart } from '../types/opencode'
+import type {
+  MappedAction,
+  OcMessage,
+  OcMessagePart,
+  OcPendingPermissionRequest,
+  OcPermissionTraceEvent,
+  OcSessionCompactionEvent,
+} from '../types/opencode'
 import type { AssistantSubtask } from '../utils/subtaskGrouping'
 import type { ForkFromActionContext, ForkPanelSnapshotBundle } from '../utils/forkPanelSnapshot'
 import SubtaskCard from './SubtaskCard'
@@ -27,8 +43,15 @@ import {
   buildCompactMappedActionTooltipHtml,
   mergeMessagesForActionTooltipLookup,
 } from '../utils/actionTooltipMapping'
-import { useTooltipTranslate } from '../hooks/useTooltipTranslate'
 import { stripHarnessGuidanceForDisplay } from '../config/harnessGuidance'
+import { experimentTelemetry } from '../experiment/telemetry'
+
+/** Skill row in the session-scoped Skill Panel (may come from any task tab). */
+type SessionSkillRecord = TaskSkillRecord & { taskId: string }
+
+function skillRecordMarker(skill: Pick<TaskSkillRecord, 'skillPath' | 'skillName' | 'feedbackRunDir'>): string {
+  return String(skill.skillPath || skill.skillName || skill.feedbackRunDir || '').trim()
+}
 
 export type SubtaskTaskTab = {
   id: string
@@ -181,6 +204,16 @@ interface SubtaskDebugPanelProps {
   onSelectTaskTab?: (id: string) => void
   sessionId?: string
   errorDiagnosisBySubtaskId?: Record<string, MemoryWorkerErrorDiagnosis>
+  /** Fired when a panel trajectory seals — triggers independent Trace summary / error diagnosis. */
+  onPanelSealed?: (subtaskId: string) => void
+  /** First time a subtask card scrolls into view (≥35% visible). */
+  onPanelBecameVisible?: (subtaskId: string) => void
+  /** Live OpenCode permission ask for this session (SSE / hydrate). */
+  pendingPermission?: OcPendingPermissionRequest | null
+  /** Permission asks kept on the trajectory after Allow/Reject. */
+  permissionTraces?: OcPermissionTraceEvent[]
+  /** Live SSE compaction marker for this session. */
+  recentCompaction?: OcSessionCompactionEvent | null
 }
 
 export default function SubtaskDebugPanel({
@@ -201,12 +234,19 @@ export default function SubtaskDebugPanel({
   onSelectTaskTab,
   sessionId,
   errorDiagnosisBySubtaskId = {},
+  onPanelSealed,
+  onPanelBecameVisible,
+  pendingPermission = null,
+  permissionTraces = [],
+  recentCompaction = null,
 }: SubtaskDebugPanelProps) {
   const summaryTooltipSafeId = useId().replace(/:/g, '')
   const summaryTooltipId = `subtask-summary-tip-${summaryTooltipSafeId}`
   const [tooltipMounted, setTooltipMounted] = useState(false)
+  const pendingSummaryTipRef = useRef(false)
+  const pendingSummarySubtaskIdRef = useRef<string | null>(null)
   const [colorBy, setColorBy] = useState<'tokens' | 'type'>('type')
-  const [legendExpanded, setLegendExpanded] = useState(false)
+  const [legendExpanded, setLegendExpanded] = useState(true)
   const [skillsByTaskId, setSkillsByTaskId] = useState<Record<string, TaskSkillRecord[]>>({})
   const [skillStatusByTaskId, setSkillStatusByTaskId] = useState<Record<string, string>>({})
   const [skillDiscoveredCountByTaskId, setSkillDiscoveredCountByTaskId] = useState<Record<string, number>>({})
@@ -214,7 +254,7 @@ export default function SubtaskDebugPanel({
   const [skillErrorByTaskId, setSkillErrorByTaskId] = useState<Record<string, string>>({})
   const [skillComment, setSkillComment] = useState('')
   const [feedbackMode, setFeedbackMode] = useState(false)
-  const [selectedSkillRecord, setSelectedSkillRecord] = useState<TaskSkillRecord | null>(null)
+  const [selectedSkillRecord, setSelectedSkillRecord] = useState<SessionSkillRecord | null>(null)
   const [selectedSkillDetail, setSelectedSkillDetail] = useState<TaskSkillDetailResult | null>(null)
   const [skillDetailLoading, setSkillDetailLoading] = useState(false)
   const [skillDetailError, setSkillDetailError] = useState('')
@@ -230,19 +270,112 @@ export default function SubtaskDebugPanel({
   const [draftPanelFeedback, setDraftPanelFeedback] = useState('')
   const actionTypePaletteId: ActionTypePaletteId = DEFAULT_ACTION_TYPE_PALETTE_ID
   const [childSessionMessages, setChildSessionMessages] = useState<Record<string, OcMessage[]>>({})
-  const diagnoses = useMemo(
-    () => Object.values(errorDiagnosisBySubtaskId).filter(Boolean),
-    [errorDiagnosisBySubtaskId],
-  )
-  const extraMessagesForTranslate = useMemo(
-    () => Object.values(childSessionMessages).flat(),
-    [childSessionMessages],
-  )
-  const { translate: tooltipTranslate } = useTooltipTranslate(sessionId, messages, {
-    extraMessages: extraMessagesForTranslate,
-    diagnoses,
-  })
   const summaryViewportRef = useRef<HTMLDivElement | null>(null)
+  /**
+   * Follow the newest panel while generating; pause when the user scrolls up or
+   * selects a historical trajectory (same stick-to-bottom pattern as MessagePanel).
+   */
+  const stickTrajectoryToBottomRef = useRef(true)
+  const TRAJECTORY_NEAR_BOTTOM_PX = 120
+
+  const setStickTrajectoryToBottom = (pinned: boolean) => {
+    stickTrajectoryToBottomRef.current = pinned
+  }
+
+  const scrollTrajectoryToBottom = (behavior: ScrollBehavior = 'auto') => {
+    if (flowLayoutMode === 'summary') return
+    const el = listScrollRef?.current
+    if (!el) return
+    if (behavior === 'smooth') {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    } else {
+      el.scrollTop = el.scrollHeight
+    }
+  }
+
+  const updateStickTrajectoryFromScroll = () => {
+    const el = listScrollRef?.current
+    if (!el) return
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    setStickTrajectoryToBottom(distanceFromBottom <= TRAJECTORY_NEAR_BOTTOM_PX)
+  }
+
+  /** Intentional upward scroll immediately releases auto-follow (more reliable than scrollTop during streaming). */
+  const handleTrajectoryListWheel = (e: WheelEvent<HTMLDivElement>) => {
+    if (e.deltaY < 0) setStickTrajectoryToBottom(false)
+  }
+
+  /** Selecting a historical card pauses follow so App's scrollIntoView is not yanked back to the latest. */
+  useEffect(() => {
+    if (linkedSubtaskIndex === null || visibleSubtasks.length === 0) return
+    const latestSourceIndex = visibleSubtasks[visibleSubtasks.length - 1]?.sourceIndex
+    if (latestSourceIndex !== undefined && linkedSubtaskIndex !== latestSourceIndex) {
+      setStickTrajectoryToBottom(false)
+    }
+  }, [linkedSubtaskIndex, visibleSubtasks])
+
+  /** New session: resume auto-follow until the user scrolls up again. */
+  useEffect(() => {
+    setStickTrajectoryToBottom(true)
+  }, [sessionId])
+
+  useEffect(() => {
+    if (!onPanelBecameVisible) return
+    const root = flowLayoutMode === 'summary' ? summaryViewportRef.current : listScrollRef?.current
+    if (!root) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting || entry.intersectionRatio < 0.35) continue
+          const id = (entry.target as HTMLElement).dataset.subtaskPanelId
+          if (id) onPanelBecameVisible(id)
+        }
+      },
+      { root: flowLayoutMode === 'summary' ? null : root, threshold: [0, 0.35, 0.5] },
+    )
+
+    const nodes = root.querySelectorAll('[data-subtask-panel-id]')
+    nodes.forEach((node) => observer.observe(node))
+    return () => observer.disconnect()
+  }, [visibleSubtasks, flowLayoutMode, onPanelBecameVisible, listScrollRef])
+
+  /** New panels while pinned to bottom: keep the newest card in view. */
+  const prevVisibleCountRef = useRef(visibleSubtasks.length)
+  useEffect(() => {
+    if (flowLayoutMode === 'summary') return
+    const prev = prevVisibleCountRef.current
+    const next = visibleSubtasks.length
+    prevVisibleCountRef.current = next
+    if (next <= prev) return
+    if (!stickTrajectoryToBottomRef.current) return
+    requestAnimationFrame(() => {
+      if (!stickTrajectoryToBottomRef.current) return
+      scrollTrajectoryToBottom('smooth')
+    })
+  }, [visibleSubtasks.length, flowLayoutMode, listScrollRef])
+
+  /** Keep following while pinned as cards grow (streaming tools / duration ticks). */
+  useEffect(() => {
+    if (flowLayoutMode === 'summary') return
+    if (!stickTrajectoryToBottomRef.current || visibleSubtasks.length === 0) return
+    requestAnimationFrame(() => {
+      if (!stickTrajectoryToBottomRef.current) return
+      scrollTrajectoryToBottom()
+    })
+  }, [visibleSubtasks, messages, flowLayoutMode, listScrollRef])
+
+  useEffect(() => {
+    if (flowLayoutMode === 'summary') return
+    const el = listScrollRef?.current
+    if (!el || typeof MutationObserver === 'undefined') return
+    const observer = new MutationObserver(() => {
+      if (!stickTrajectoryToBottomRef.current) return
+      scrollTrajectoryToBottom()
+    })
+    observer.observe(el, { childList: true, subtree: true, characterData: true })
+    return () => observer.disconnect()
+  }, [flowLayoutMode, listScrollRef, sessionId])
   const [summaryViewportSize, setSummaryViewportSize] = useState({ width: 0, height: 0 })
   const displayTaskTabs =
     taskTabs.length > 0
@@ -261,11 +394,44 @@ export default function SubtaskDebugPanel({
     : 0
   const activeDisplayTaskLabel = `Task ${activeDisplayTaskIndex + 1}`
   const activeTaskId = activeDisplayTask?.id ?? ''
-  const activeSkills = activeTaskId ? skillsByTaskId[activeTaskId] ?? [] : []
-  const activeSkillStatus = activeTaskId ? skillStatusByTaskId[activeTaskId] ?? 'none' : 'none'
-  const activeSkillDiscoveredCount = activeTaskId ? skillDiscoveredCountByTaskId[activeTaskId] ?? 0 : 0
-  const activeSkillLoading = activeTaskId ? Boolean(skillLoadingByTaskId[activeTaskId]) : false
-  const activeSkillError = activeTaskId ? skillErrorByTaskId[activeTaskId] : undefined
+  const sessionTaskIds = useMemo(
+    () => displayTaskTabs.map((tab) => tab.id).filter((id) => Boolean(id) && id !== 'task-1-live'),
+    [displayTaskTabs],
+  )
+  const sessionTaskIdsKey = sessionTaskIds.join('|')
+  const sessionSkills = useMemo<SessionSkillRecord[]>(() => {
+    const out: SessionSkillRecord[] = []
+    const seen = new Set<string>()
+    for (const taskId of sessionTaskIds) {
+      for (const skill of skillsByTaskId[taskId] ?? []) {
+        const marker = skillRecordMarker(skill)
+        if (marker && seen.has(marker)) continue
+        if (marker) seen.add(marker)
+        out.push({ ...skill, taskId })
+      }
+    }
+    return out.sort((a, b) => {
+      const at = Date.parse(a.createdAt || '') || 0
+      const bt = Date.parse(b.createdAt || '') || 0
+      return bt - at
+    })
+  }, [sessionTaskIds, skillsByTaskId])
+  const sessionSkillLoading = sessionTaskIds.some((taskId) => Boolean(skillLoadingByTaskId[taskId]))
+  const sessionSkillStatus = useMemo(() => {
+    if (sessionTaskIds.length === 0) return 'none'
+    const statuses = sessionTaskIds.map((taskId) => skillStatusByTaskId[taskId] ?? 'none')
+    if (statuses.some((s) => s === 'distilling') || sessionSkillLoading) return 'distilling'
+    if (sessionSkills.length > 0 || statuses.some((s) => s === 'ready')) return 'ready'
+    if (statuses.some((s) => s === 'error')) return 'error'
+    return 'none'
+  }, [sessionTaskIds, skillStatusByTaskId, sessionSkillLoading, sessionSkills.length])
+  const sessionSkillDiscoveredCount = sessionTaskIds.reduce(
+    (sum, taskId) => sum + (skillDiscoveredCountByTaskId[taskId] ?? 0),
+    0,
+  )
+  const sessionSkillError = sessionTaskIds
+    .map((taskId) => skillErrorByTaskId[taskId])
+    .find((err) => Boolean(err))
   const canShowSkillDock = Boolean(
     activeDisplayTask && (activeDisplayTask.turnCount > 0 || visibleSubtasks.length > 0),
   )
@@ -292,39 +458,179 @@ export default function SubtaskDebugPanel({
     setEditingFeedbackSubtaskIndex(null)
     setDraftPanelFeedback('')
     setSkillComment('')
+  }, [activeTaskId])
+
+  useEffect(() => {
     setSelectedSkillRecord(null)
     setSelectedSkillDetail(null)
     setSkillDetailError('')
     setCopiedSkillPath(false)
-  }, [activeTaskId])
+    setSkillsByTaskId({})
+    setSkillStatusByTaskId({})
+    setSkillDiscoveredCountByTaskId({})
+    setSkillLoadingByTaskId({})
+    setSkillErrorByTaskId({})
+  }, [sessionId])
 
   useEffect(() => {
-    if (!canShowSkillDock || !sessionId || !activeTaskId || activeTaskId === 'task-1-live') return
+    if (!canShowSkillDock || !sessionId || sessionTaskIds.length === 0) return
     let cancelled = false
-    setSkillLoadingByTaskId((prev) => ({ ...prev, [activeTaskId]: true }))
-    setSkillErrorByTaskId((prev) => ({ ...prev, [activeTaskId]: '' }))
-    void fetchTaskSkills(sessionId, activeTaskId, sessionDirectory)
-      .then((result) => {
-        if (cancelled) return
-        setSkillsByTaskId((prev) => ({ ...prev, [activeTaskId]: result.skills ?? [] }))
-        setSkillStatusByTaskId((prev) => ({ ...prev, [activeTaskId]: result.status || 'none' }))
-        setSkillDiscoveredCountByTaskId((prev) => ({ ...prev, [activeTaskId]: result.discoveredCount ?? 0 }))
+    const taskIds = [...sessionTaskIds]
+    for (const taskId of taskIds) {
+      setSkillLoadingByTaskId((prev) => ({ ...prev, [taskId]: true }))
+      setSkillErrorByTaskId((prev) => ({ ...prev, [taskId]: '' }))
+    }
+    void Promise.all(
+      taskIds.map(async (taskId) => {
+        try {
+          const result = await fetchTaskSkills(sessionId, taskId, sessionDirectory)
+          return { taskId, result, error: null as string | null }
+        } catch (err: unknown) {
+          return {
+            taskId,
+            result: null,
+            error: err instanceof Error ? err.message : String(err),
+          }
+        }
+      }),
+    ).then((entries) => {
+      if (cancelled) return
+      setSkillsByTaskId((prev) => {
+        const next = { ...prev }
+        for (const entry of entries) {
+          if (entry.result) next[entry.taskId] = entry.result.skills ?? []
+        }
+        return next
       })
-      .catch((err: unknown) => {
-        if (cancelled) return
-        setSkillErrorByTaskId((prev) => ({
-          ...prev,
-          [activeTaskId]: err instanceof Error ? err.message : String(err),
-        }))
+      setSkillStatusByTaskId((prev) => {
+        const next = { ...prev }
+        for (const entry of entries) {
+          next[entry.taskId] = entry.result?.status || (entry.error ? 'error' : 'none')
+        }
+        return next
       })
-      .finally(() => {
-        if (cancelled) return
-        setSkillLoadingByTaskId((prev) => ({ ...prev, [activeTaskId]: false }))
+      setSkillDiscoveredCountByTaskId((prev) => {
+        const next = { ...prev }
+        for (const entry of entries) {
+          next[entry.taskId] = entry.result?.discoveredCount ?? 0
+        }
+        return next
       })
+      setSkillErrorByTaskId((prev) => {
+        const next = { ...prev }
+        for (const entry of entries) {
+          next[entry.taskId] = entry.error || ''
+        }
+        return next
+      })
+      setSkillLoadingByTaskId((prev) => {
+        const next = { ...prev }
+        for (const entry of entries) {
+          next[entry.taskId] = false
+        }
+        return next
+      })
+    })
     return () => {
       cancelled = true
     }
-  }, [activeTaskId, canShowSkillDock, sessionDirectory, sessionId])
+  }, [canShowSkillDock, sessionDirectory, sessionId, sessionTaskIdsKey])
+
+  const anySkillDistilling = sessionTaskIds.some((taskId) => skillStatusByTaskId[taskId] === 'distilling')
+
+  // Poll while distilling (and briefly after new task tabs appear) so users see skills without switching tabs.
+  useEffect(() => {
+    if (!canShowSkillDock || !sessionId || sessionTaskIds.length === 0) return
+
+    let cancelled = false
+    let attempts = 0
+    const taskIds = [...sessionTaskIds]
+    const startedAt = Date.now()
+    const GRACE_MS = 45_000
+    const MAX_MS = 4 * 60_000
+
+    const applyEntries = (
+      entries: Array<{
+        taskId: string
+        result: Awaited<ReturnType<typeof fetchTaskSkills>> | null
+        error: string | null
+      }>,
+    ) => {
+      setSkillsByTaskId((prev) => {
+        const next = { ...prev }
+        for (const entry of entries) {
+          if (entry.result) next[entry.taskId] = entry.result.skills ?? []
+        }
+        return next
+      })
+      setSkillStatusByTaskId((prev) => {
+        const next = { ...prev }
+        for (const entry of entries) {
+          next[entry.taskId] = entry.result?.status || (entry.error ? 'error' : prev[entry.taskId] || 'none')
+        }
+        return next
+      })
+      setSkillDiscoveredCountByTaskId((prev) => {
+        const next = { ...prev }
+        for (const entry of entries) {
+          if (entry.result) next[entry.taskId] = entry.result.discoveredCount ?? 0
+        }
+        return next
+      })
+      setSkillErrorByTaskId((prev) => {
+        const next = { ...prev }
+        for (const entry of entries) {
+          next[entry.taskId] = entry.error || ''
+        }
+        return next
+      })
+      return entries.map((entry) => entry.result?.status || (entry.error ? 'error' : 'none'))
+    }
+
+    const pollOnce = async () => {
+      const entries = await Promise.all(
+        taskIds.map(async (taskId) => {
+          try {
+            const result = await fetchTaskSkills(sessionId, taskId, sessionDirectory)
+            return { taskId, result, error: null as string | null }
+          } catch (err: unknown) {
+            return {
+              taskId,
+              result: null,
+              error: err instanceof Error ? err.message : String(err),
+            }
+          }
+        }),
+      )
+      if (cancelled) return [] as string[]
+      return applyEntries(entries)
+    }
+
+    const timer = window.setInterval(() => {
+      void (async () => {
+        if (cancelled) return
+        attempts += 1
+        const elapsed = Date.now() - startedAt
+        if (elapsed > MAX_MS) {
+          window.clearInterval(timer)
+          return
+        }
+        const statuses = await pollOnce()
+        if (cancelled) return
+        const stillDistilling = statuses.some((s) => s === 'distilling')
+        const inGrace = elapsed < GRACE_MS
+        if (!stillDistilling && !inGrace) {
+          window.clearInterval(timer)
+        }
+        void attempts
+      })()
+    }, 20_000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [anySkillDistilling, canShowSkillDock, sessionDirectory, sessionId, sessionTaskIdsKey])
 
   const summarySegments = useMemo(
     () =>
@@ -575,7 +881,13 @@ export default function SubtaskDebugPanel({
     ? 'Please select at least one panel'
     : 'Describe your feedback on the selected execution trace — what worked, what failed, or what should change'
   const distillButtonDisabled =
-    activeSkillLoading || !sessionId || !activeTaskId || !canDistillFeedback
+    sessionSkillLoading || !sessionId || !activeTaskId || !canDistillFeedback
+  const selectAllFeedbackPanels = () => {
+    setSelectedFeedbackSubtaskIndices(visibleSubtasks.map(({ sourceIndex }) => sourceIndex))
+  }
+  const deselectAllFeedbackPanels = () => {
+    setSelectedFeedbackSubtaskIndices([])
+  }
   const openPanelFeedbackEditor = (sourceIndex: number) => {
     setFeedbackMode(true)
     setSelectedFeedbackSubtaskIndices((prev) =>
@@ -621,7 +933,7 @@ export default function SubtaskDebugPanel({
               row.childDescriptors.flatMap((d) => childSessionMessages[d.childSessionID] ?? []),
             )
             return (
-              <div key={`${row.subtaskId}:${row.sourceIndex}:${row.rowIndex}`}>
+              <div key={`${row.subtaskId}:${row.sourceIndex}:${row.rowIndex}`} data-subtask-panel-id={row.subtaskId}>
                 <div
                   style={{
                     display: 'flex',
@@ -659,7 +971,6 @@ export default function SubtaskDebugPanel({
                           action,
                           tooltipMessages,
                           formatSummaryTooltipDuration,
-                          { translate: tooltipTranslate },
                         )
                         return (
                           <span
@@ -667,6 +978,12 @@ export default function SubtaskDebugPanel({
                             data-tooltip-id={summaryTooltipId}
                             data-tooltip-html={tipHtml}
                             data-tooltip-place="top"
+                            data-vt-tip="action"
+                            onMouseEnter={() => {
+                              pendingSummaryTipRef.current = true
+                              pendingSummarySubtaskIdRef.current = row.subtaskId
+                              experimentTelemetry.onPanelView(row.subtaskId, sessionId, 'tooltip.summary')
+                            }}
                             style={{
                               width: summaryLayout.blockWidth,
                               height: summaryLayout.blockHeight,
@@ -699,6 +1016,19 @@ export default function SubtaskDebugPanel({
           clickable
           globalCloseEvents={{ scroll: false, resize: true, escape: true }}
           arrowColor="#f8fafc"
+          afterShow={() => {
+            experimentTelemetry.enterPanelFocus('tooltip')
+            if (pendingSummaryTipRef.current) {
+              experimentTelemetry.onActionTooltipShow(
+                sessionId,
+                'summary',
+                pendingSummarySubtaskIdRef.current || undefined,
+              )
+            }
+          }}
+          afterHide={() => {
+            experimentTelemetry.leavePanelFocus('tooltip', 'trajectory')
+          }}
         />
       )}
     </>
@@ -764,6 +1094,10 @@ export default function SubtaskDebugPanel({
         setSkillsByTaskId((prev) => ({ ...prev, [taskId]: result.skills ?? (result.skill ? [result.skill] : []) }))
         setSkillStatusByTaskId((prev) => ({ ...prev, [taskId]: result.status || 'ready' }))
         setSkillDiscoveredCountByTaskId((prev) => ({ ...prev, [taskId]: result.discoveredCount ?? prev[taskId] ?? 0 }))
+        experimentTelemetry.onSkillDistill(
+          sessionId,
+          result.skill?.skillName || result.skills?.[0]?.skillName,
+        )
       })
       .catch((err: unknown) => {
         setSkillStatusByTaskId((prev) => ({ ...prev, [taskId]: 'error' }))
@@ -784,9 +1118,10 @@ export default function SubtaskDebugPanel({
   }
 
 
-  const openSkillDetail = (skill: TaskSkillRecord) => {
-    if (!sessionId || !activeTaskId) return
+  const openSkillDetail = (skill: SessionSkillRecord) => {
+    if (!sessionId || !skill.taskId) return
     const skillKey = skill.skillPath || skill.skillName || skill.feedbackRunDir || ''
+    experimentTelemetry.onSkillPanelClick(sessionId, skillKey || undefined)
     setSelectedSkillRecord(skill)
     setSelectedSkillDetail(null)
     setSkillDetailError('')
@@ -800,7 +1135,7 @@ export default function SubtaskDebugPanel({
       return
     }
     setSkillDetailLoading(true)
-    void fetchTaskSkillDetail(sessionId, activeTaskId, skillKey)
+    void fetchTaskSkillDetail(sessionId, skill.taskId, skillKey)
       .then((result) => {
         setSelectedSkillDetail(result)
         setSkillMdDraft(result.skillMd || '')
@@ -842,22 +1177,23 @@ export default function SubtaskDebugPanel({
 
   const saveSkillMdDraft = () => {
     const skillPath = selectedSkillRecord?.skillPath || ''
+    const skillTaskId = selectedSkillRecord?.taskId || ''
     const skillKey =
       selectedSkillRecord?.skillPath ||
       selectedSkillRecord?.skillName ||
       selectedSkillRecord?.feedbackRunDir ||
       ''
-    if (!skillPath || !skillMdDraft.trim() || !sessionId || !activeTaskId || !skillKey) return
+    if (!skillPath || !skillMdDraft.trim() || !sessionId || !skillTaskId || !skillKey) return
     setSkillMdSaving(true)
     setSkillMdSaveError('')
     void saveTaskSkillMd({
       skillPath,
       content: skillMdDraft,
       sessionId,
-      taskId: activeTaskId,
+      taskId: skillTaskId,
     })
       .then(() =>
-        fetchTaskSkillDetail(sessionId, activeTaskId, skillKey).then((result) => {
+        fetchTaskSkillDetail(sessionId, skillTaskId, skillKey).then((result) => {
           setSelectedSkillDetail(result)
           setSkillMdDraft(result.skillMd || skillMdDraft)
           setSkillMdEditing(false)
@@ -945,6 +1281,15 @@ export default function SubtaskDebugPanel({
           <div
             role="tablist"
             aria-label="Task segments"
+            onPointerEnter={() => experimentTelemetry.enterPanelFocus('task')}
+            onPointerLeave={(e) => {
+              const related = e.relatedTarget as Node | null
+              const column = (e.currentTarget as HTMLElement).closest(
+                '[data-exp-focus="trajectory-column"]',
+              )
+              const stay = Boolean(column && related && column.contains(related))
+              experimentTelemetry.leavePanelFocus('task', stay ? 'trajectory' : undefined)
+            }}
             style={{
               display: 'flex',
               flexWrap: 'nowrap',
@@ -1041,6 +1386,12 @@ export default function SubtaskDebugPanel({
       >
         <div
           ref={listScrollRef}
+          className="hide-scrollbar"
+          onScroll={() => {
+            updateStickTrajectoryFromScroll()
+            experimentTelemetry.onScroll('trajectory', sessionId)
+          }}
+          onWheel={handleTrajectoryListWheel}
           style={{
             height: '100%',
             width: '100%',
@@ -1057,7 +1408,49 @@ export default function SubtaskDebugPanel({
           ) : visibleSubtasks.length === 0 ? (
             <span style={{ color: '#AAA', fontSize: 11 }}>No subtasks</span>
           ) : (
-            visibleSubtasks.map(({ subtask: st, sourceIndex }, si) => {
+            (() => {
+              const permMsgId = pendingPermission?.tool?.messageID
+              let permissionCardSourceIndex: number | null = null
+              if (pendingPermission) {
+                if (permMsgId) {
+                  for (const { subtask: st, sourceIndex } of visibleSubtasks) {
+                    if (st.assistantMessageIndices.some((i) => messages[i]?.info?.id === permMsgId)) {
+                      permissionCardSourceIndex = sourceIndex
+                      break
+                    }
+                  }
+                }
+                if (permissionCardSourceIndex === null) {
+                  permissionCardSourceIndex =
+                    visibleSubtasks[visibleSubtasks.length - 1]?.sourceIndex ?? null
+                }
+              }
+              const compactionCardSourceIndex =
+                recentCompaction != null
+                  ? (visibleSubtasks[visibleSubtasks.length - 1]?.sourceIndex ?? null)
+                  : null
+              const lastSourceIndex =
+                visibleSubtasks[visibleSubtasks.length - 1]?.sourceIndex ?? null
+              const claimedTraceIds = new Set<string>()
+              const tracesBySourceIndex = new Map<number, OcPermissionTraceEvent[]>()
+              for (const { subtask: st, sourceIndex } of visibleSubtasks) {
+                const msgIds = new Set(
+                  st.assistantMessageIndices
+                    .map((i) => messages[i]?.info?.id)
+                    .filter((id): id is string => Boolean(id)),
+                )
+                const matched = permissionTraces.filter(
+                  (t) => t.tool?.messageID && msgIds.has(t.tool.messageID),
+                )
+                for (const t of matched) claimedTraceIds.add(t.id)
+                if (matched.length) tracesBySourceIndex.set(sourceIndex, matched)
+              }
+              const orphanTraces = permissionTraces.filter((t) => !claimedTraceIds.has(t.id))
+              if (lastSourceIndex != null && orphanTraces.length > 0) {
+                const prev = tracesBySourceIndex.get(lastSourceIndex) ?? []
+                tracesBySourceIndex.set(lastSourceIndex, [...prev, ...orphanTraces])
+              }
+              return visibleSubtasks.map(({ subtask: st, sourceIndex }, si) => {
               const currentUserIndex = firstUserMessageIndex(st)
               const previous = si > 0 ? visibleSubtasks[si - 1] : null
               const previousUserIndex = previous ? firstUserMessageIndex(previous.subtask) : null
@@ -1067,6 +1460,9 @@ export default function SubtaskDebugPanel({
                 currentUserIndex !== previousUserIndex
               const feedbackSelected = feedbackMode && selectedFeedbackIndexSet.has(sourceIndex)
               const hasPanelFeedback = Boolean(panelFeedbackByIndex[sourceIndex]?.trim())
+              const showPendingPermission = permissionCardSourceIndex === sourceIndex
+              const showRecentCompaction = compactionCardSourceIndex === sourceIndex
+              const cardPermissionTraces = tracesBySourceIndex.get(sourceIndex) ?? []
 
               return (
                 <Fragment
@@ -1091,7 +1487,8 @@ export default function SubtaskDebugPanel({
                       <span style={{ height: 1, flex: 1, background: '#E0E0E0' }} />
                     </div>
                   ) : null}
-                  <SubtaskCard
+                  <div data-subtask-panel-id={st.subtask_id}>
+                    <SubtaskCard
                     subtask={st}
                     messages={messages}
                     displayIndex={si}
@@ -1101,6 +1498,14 @@ export default function SubtaskDebugPanel({
                       if (feedbackMode) {
                         toggleFeedbackPanel(sourceIndex)
                         return
+                      }
+                      const latestSourceIndex =
+                        visibleSubtasks[visibleSubtasks.length - 1]?.sourceIndex
+                      if (
+                        latestSourceIndex !== undefined &&
+                        sourceIndex !== latestSourceIndex
+                      ) {
+                        setStickTrajectoryToBottom(false)
                       }
                       onSelectSubtask(sourceIndex)
                     }}
@@ -1119,22 +1524,37 @@ export default function SubtaskDebugPanel({
                     onColorByChange={setColorBy}
                     actionTypePaletteId={actionTypePaletteId}
                     errorDiagnosis={errorDiagnosisBySubtaskId[st.subtask_id]}
+                    onPanelSealed={onPanelSealed}
                     feedbackMode={feedbackMode}
                     isFeedbackSelected={feedbackSelected}
                     hasFeedbackComment={hasPanelFeedback}
                     onToggleFeedbackSelection={() => toggleFeedbackPanel(sourceIndex)}
                     onOpenFeedbackComment={() => openPanelFeedbackEditor(sourceIndex)}
-                    sessionId={sessionId}
-                    tooltipTranslate={tooltipTranslate}
+                    pendingPermission={pendingPermission}
+                    showPendingPermission={showPendingPermission}
+                    permissionTraces={cardPermissionTraces}
+                    recentCompaction={recentCompaction}
+                    showRecentCompaction={showRecentCompaction}
                   />
+                  </div>
                 </Fragment>
               )
             })
+            })()
           )}
         </div>
       </div>
       {canShowSkillDock ? (
         <div
+          onPointerEnter={() => experimentTelemetry.enterPanelFocus('skill')}
+          onPointerLeave={(e) => {
+            const related = e.relatedTarget as Node | null
+            const column = (e.currentTarget as HTMLElement).closest(
+              '[data-exp-focus="trajectory-column"]',
+            )
+            const stay = Boolean(column && related && column.contains(related))
+            experimentTelemetry.leavePanelFocus('skill', stay ? 'trajectory' : undefined)
+          }}
           style={{
             flexShrink: 0,
             marginTop: 8,
@@ -1151,18 +1571,21 @@ export default function SubtaskDebugPanel({
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexShrink: 0 }}>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: '#1F2937' }}>
-                Skill Panel · {activeDisplayTaskLabel}
+                Skill Panel
+              </div>
+              <div style={{ fontSize: 9, color: '#667085', marginTop: 1 }}>
+                Session skills{sessionSkills.length > 0 ? ` · ${sessionSkills.length}` : ''}
               </div>
             </div>
             <span
               style={{
                 fontSize: 9,
                 color:
-                  activeSkillStatus === 'ready'
+                  sessionSkillStatus === 'ready'
                     ? '#166534'
-                    : activeSkillStatus === 'distilling' || activeSkillLoading
+                    : sessionSkillStatus === 'distilling' || sessionSkillLoading
                     ? '#92400E'
-                    : activeSkillStatus === 'error'
+                    : sessionSkillStatus === 'error'
                     ? '#991B1B'
                     : '#8A8A8A',
                 border: '1px solid #E1E1E1',
@@ -1172,24 +1595,30 @@ export default function SubtaskDebugPanel({
                 whiteSpace: 'nowrap',
               }}
             >
-              {activeSkillLoading
-                ? 'loading'
-                : activeSkillStatus === 'ready'
-                ? 'skill ready'
-                : activeSkillStatus === 'distilling'
-                ? 'distilling'
-                : activeSkillStatus === 'error'
-                ? 'error'
-                : 'none'}
+              {sessionSkillLoading
+                ? '加载中'
+                : sessionSkillStatus === 'ready'
+                ? '已就绪'
+                : sessionSkillStatus === 'distilling'
+                ? '正在沉淀…'
+                : sessionSkillStatus === 'error'
+                ? '沉淀失败'
+                : '暂无'}
             </span>
           </div>
 
-          {activeSkills.length > 0 || activeSkillError || (!activeSkillLoading && activeTaskId !== 'task-1-live') ? (
+          {sessionSkillStatus === 'distilling' || sessionSkillLoading ? (
+            <div style={{ fontSize: 10, color: '#92400E', lineHeight: 1.4 }}>
+              正在根据上一任务的 trace 沉淀 skill，完成后会自动出现在下方，无需手动刷新。
+            </div>
+          ) : null}
+
+          {sessionSkills.length > 0 || sessionSkillError || (!sessionSkillLoading && sessionTaskIds.length > 0) ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minHeight: 0, maxHeight: 'min(160px, 28vh)', overflowY: 'auto' }}>
-            {activeSkills.length > 0 ? (
-              activeSkills.map((skill, idx) => (
+            {sessionSkills.length > 0 ? (
+              sessionSkills.map((skill, idx) => (
                 <button
-                  key={`${skill.skillPath || skill.skillName}:${idx}`}
+                  key={`${skill.taskId}:${skill.skillPath || skill.skillName}:${idx}`}
                   type="button"
                   onClick={() => openSkillDetail(skill)}
                   style={{
@@ -1257,7 +1686,7 @@ export default function SubtaskDebugPanel({
                   </span>
                 </button>
               ))
-            ) : activeSkillError ? (
+            ) : sessionSkillError ? (
               <div
                 style={{
                   minHeight: 32,
@@ -1270,9 +1699,9 @@ export default function SubtaskDebugPanel({
                   lineHeight: 1.35,
                 }}
               >
-                {activeSkillError}
+                {sessionSkillError}
               </div>
-            ) : !activeSkillLoading && activeTaskId !== 'task-1-live' ? (
+            ) : !sessionSkillLoading ? (
               <div
                 style={{
                   minHeight: 32,
@@ -1286,7 +1715,7 @@ export default function SubtaskDebugPanel({
                 }}
               >
                 No linked skill
-                {activeSkillDiscoveredCount > 0 ? ` (${activeSkillDiscoveredCount} discovered)` : ''}.
+                {sessionSkillDiscoveredCount > 0 ? ` (${sessionSkillDiscoveredCount} discovered)` : ''}.
               </div>
             ) : null}
           </div>
@@ -1304,46 +1733,80 @@ export default function SubtaskDebugPanel({
                   background: hasSelectedFeedbackPanels ? '#FFFFFF' : '#F8F9FB',
                 }}
               >
-                {hasSelectedFeedbackPanels ? (
-                  <div
+                <div
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '5px 7px',
+                    borderBottom: '1px solid #EEF2F6',
+                    background: '#F8FAFC',
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={selectAllFeedbackPanels}
                     style={{
-                      display: 'flex',
-                      flexWrap: 'wrap',
-                      alignItems: 'center',
-                      gap: 6,
-                      padding: '5px 7px',
-                      borderBottom: '1px solid #EEF2F6',
-                      background: '#F8FAFC',
+                      border: '1px solid #CBD5E1',
+                      borderRadius: 999,
+                      background: '#FFFFFF',
+                      color: '#334155',
+                      padding: '2px 7px',
+                      fontSize: 9,
+                      lineHeight: '14px',
+                      fontWeight: 650,
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
                     }}
                   >
-                    <span style={{ fontSize: 9, color: '#64748B', lineHeight: '16px' }}>
-                      Selected:{' '}
-                      <span style={{ fontWeight: 650, color: '#334155' }}>{feedbackScopeLabel}</span>
-                    </span>
-                    {panelsWithPanelComments.map((panel) => (
-                      <button
-                        key={panel.sourceIndex}
-                        type="button"
-                        onClick={() => openPanelFeedbackEditor(panel.sourceIndex)}
-                        title={panel.comment}
-                        style={{
-                          border: '1px solid #9AC2F8',
-                          borderRadius: 999,
-                          background: '#F0F7FF',
-                          color: '#185EA8',
-                          padding: '2px 7px',
-                          fontSize: 9,
-                          lineHeight: '14px',
-                          fontWeight: 650,
-                          cursor: 'pointer',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        Panel #{panel.sourceIndex + 1} · note
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
+                    Select all
+                  </button>
+                  <button
+                    type="button"
+                    onClick={deselectAllFeedbackPanels}
+                    style={{
+                      border: '1px solid #CBD5E1',
+                      borderRadius: 999,
+                      background: '#FFFFFF',
+                      color: '#334155',
+                      padding: '2px 7px',
+                      fontSize: 9,
+                      lineHeight: '14px',
+                      fontWeight: 650,
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    Deselect all
+                  </button>
+                  <span style={{ fontSize: 9, color: '#64748B', lineHeight: '16px' }}>
+                    Selected:{' '}
+                    <span style={{ fontWeight: 650, color: '#334155' }}>{feedbackScopeLabel}</span>
+                  </span>
+                  {panelsWithPanelComments.map((panel) => (
+                    <button
+                      key={panel.sourceIndex}
+                      type="button"
+                      onClick={() => openPanelFeedbackEditor(panel.sourceIndex)}
+                      title={panel.comment}
+                      style={{
+                        border: '1px solid #9AC2F8',
+                        borderRadius: 999,
+                        background: '#F0F7FF',
+                        color: '#185EA8',
+                        padding: '2px 7px',
+                        fontSize: 9,
+                        lineHeight: '14px',
+                        fontWeight: 650,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Panel #{panel.sourceIndex + 1} · note
+                    </button>
+                  ))}
+                </div>
                 <textarea
                   value={skillComment}
                   onChange={(e) => setSkillComment(e.target.value)}
@@ -1420,7 +1883,7 @@ export default function SubtaskDebugPanel({
               <button
                 type="button"
                 onClick={enterFeedbackMode}
-                disabled={activeSkillLoading}
+                disabled={sessionSkillLoading}
                 style={{
                   width: '100%',
                   minHeight: 36,
@@ -1432,7 +1895,7 @@ export default function SubtaskDebugPanel({
                   fontSize: 13,
                   lineHeight: '22px',
                   fontWeight: 700,
-                  cursor: activeSkillLoading ? 'not-allowed' : 'pointer',
+                  cursor: sessionSkillLoading ? 'not-allowed' : 'pointer',
                   whiteSpace: 'nowrap',
                 }}
               >
@@ -1616,6 +2079,8 @@ export default function SubtaskDebugPanel({
           aria-modal="true"
           aria-label="Skill detail"
           onClick={closeSkillDetail}
+          onPointerEnter={() => experimentTelemetry.enterPanelFocus('skill')}
+          onPointerLeave={() => experimentTelemetry.leavePanelFocus('skill', 'trajectory')}
           style={{
             position: 'fixed',
             inset: 0,

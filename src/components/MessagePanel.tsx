@@ -1,15 +1,18 @@
-import { useState, useEffect, useMemo, type RefObject } from 'react'
-import type { OcMessage, OcPendingQuestionRequest, OcTodo } from '../types/opencode'
+import { useState, useEffect, useMemo, useRef, type RefObject, type WheelEvent } from 'react'
+import type { OcMessage, OcPendingPermissionRequest, OcPendingQuestionRequest, OcPermissionReply, OcTodo } from '../types/opencode'
 import type { CanonicalTodo, LatestTodowriteBatchProgress } from '../utils/todoRegistry'
 import MessageBubble from './MessageBubble'
 import TodoPanel from './TodoPanel'
 import MessageInput, { type MessageSendPayload } from './MessageInput'
 import QuestionPromptPanel from './QuestionPromptPanel'
+import PermissionPromptPanel from './PermissionPromptPanel'
 import { actionFlowPalette } from '../styles/actionFlowPalette'
 import type { OcComposerModelOption } from '../services/opencodeApi'
 import { messagesHaveOpenQuestionWithInput } from '../utils/questionPart'
 import { collectStaleToolCallIDs } from '../utils/actionMapping'
+import { messageHasAgentStepFinishStop } from '../utils/subtaskGrouping'
 import ScrollNodeRail, { type ScrollNodeMarker } from './ScrollNodeRail'
+import { experimentTelemetry } from '../experiment/telemetry'
 
 interface MessagePanelProps {
   messages: OcMessage[]
@@ -37,6 +40,12 @@ interface MessagePanelProps {
   /** Incremented on subtask selection to auto-expand matching todo sections */
   todoPanelRevealGeneration?: number
   onTodoClick?: (todo: OcTodo) => void
+  /** Experiment: any click inside the Todo panel. */
+  onTodoPanelClick?: (detail: {
+    target: 'header' | 'section' | 'todo'
+    section?: 'open' | 'done' | 'history'
+    todoId?: string
+  }) => void
   /** PATCH session title via OpenCode */
   onSessionTitleCommit?: (title: string) => Promise<void>
   /** OpenCode question channel requests (SSE `question.asked`) */
@@ -44,6 +53,12 @@ interface MessagePanelProps {
   onQuestionReply?: (answers: string[][]) => Promise<void>
   onQuestionReject?: () => Promise<void>
   questionSubmitting?: boolean
+  /** OpenCode permission asks (SSE `permission.asked`) */
+  pendingPermission?: OcPendingPermissionRequest | null
+  onPermissionReply?: (reply: OcPermissionReply, message?: string) => Promise<void>
+  permissionSubmitting?: boolean
+  /** How many asks are queued for this session (head is shown in the panel). */
+  pendingPermissionQueueSize?: number
   /** Workspace directory header (`x-opencode-directory`) for inline submits */
   sessionDirectory?: string
   /** Bubble-level question completion hook */
@@ -83,11 +98,16 @@ export default function MessagePanel({
   highlightTodoIds,
   todoPanelRevealGeneration,
   onTodoClick,
+  onTodoPanelClick,
   onSessionTitleCommit,
   pendingQuestion,
   onQuestionReply,
   onQuestionReject,
   questionSubmitting,
+  pendingPermission,
+  onPermissionReply,
+  permissionSubmitting,
+  pendingPermissionQueueSize = 0,
   sessionDirectory,
   onQuestionAnswered,
   composerModelRef = '',
@@ -105,6 +125,9 @@ export default function MessagePanel({
   const blockComposerForQuestion =
     hasInlineQuestion ||
     Boolean(pendingQuestion && pendingQuestion.sessionID === sessionId)
+  const blockComposerForPermission = Boolean(
+    pendingPermission && pendingPermission.sessionID === sessionId,
+  )
 
   const assistantIndices = messages
     .map((m, i) => (m.info.role === 'assistant' ? i : -1))
@@ -121,6 +144,22 @@ export default function MessagePanel({
       return !hasLaterAssistant
     })
   })
+  /** Latest assistant turn still streaming (no completed timestamp yet) — allow stop even between tools. */
+  const lastMessage = messages[messages.length - 1]
+  const lastAssistantStopped =
+    lastMessage?.info.role === 'assistant' &&
+    (lastMessage.info.finish?.trim().toLowerCase() === 'stop' ||
+      messageHasAgentStepFinishStop(lastMessage))
+  const hasIncompleteAssistant =
+    lastMessage?.info.role === 'assistant' &&
+    typeof lastMessage.info.time?.completed !== 'number' &&
+    !lastAssistantStopped
+  const agentBusy =
+    hasRunningTool ||
+    hasIncompleteAssistant ||
+    waitingForAssistantReply ||
+    blockComposerForPermission ||
+    blockComposerForQuestion
 
   const staleToolCallIds = useMemo(() => collectStaleToolCallIDs(messages), [messages])
   const transcriptAnchorNowMs = Date.now()
@@ -139,6 +178,95 @@ export default function MessagePanel({
         .filter((marker): marker is ScrollNodeMarker => marker != null),
     [messages],
   )
+
+  /** Stick to bottom while streaming; pause when the user scrolls up to read history. */
+  const stickToBottomRef = useRef(true)
+  const [pinnedToLatest, setPinnedToLatest] = useState(true)
+  const NEAR_BOTTOM_PX = 96
+
+  const setStickToBottom = (pinned: boolean) => {
+    stickToBottomRef.current = pinned
+    setPinnedToLatest((prev) => (prev === pinned ? prev : pinned))
+  }
+
+  const scrollMessagesToBottom = (behavior: ScrollBehavior = 'auto') => {
+    const el = messageListScrollRef?.current
+    if (!el) return
+    if (behavior === 'smooth') {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    } else {
+      el.scrollTop = el.scrollHeight
+    }
+  }
+
+  const jumpToLatest = () => {
+    setStickToBottom(true)
+    requestAnimationFrame(() => {
+      scrollMessagesToBottom('smooth')
+    })
+  }
+
+  const updateStickToBottomFromScroll = () => {
+    const el = messageListScrollRef?.current
+    if (!el) return
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    setStickToBottom(distanceFromBottom <= NEAR_BOTTOM_PX)
+  }
+
+  /** Intentional upward scroll immediately releases auto-follow (more reliable than scrollTop during streaming). */
+  const handleMessageListWheel = (e: WheelEvent<HTMLDivElement>) => {
+    if (e.deltaY < 0) setStickToBottom(false)
+  }
+
+  /** Jump to latest turn after session load — mw-internal prompts are huge and bury the answer at the top. */
+  const wasLoadingRef = useRef(loading)
+  useEffect(() => {
+    const finishedLoad = wasLoadingRef.current && !loading
+    wasLoadingRef.current = loading
+    if (!finishedLoad || !sessionId || messages.length === 0) return
+    setStickToBottom(true)
+    requestAnimationFrame(() => {
+      scrollMessagesToBottom()
+    })
+  }, [loading, sessionId, messages.length, messageListScrollRef])
+
+  /** Follow newly appended / streaming content while the viewport is pinned to the bottom. */
+  useEffect(() => {
+    if (!stickToBottomRef.current || loading || messages.length === 0) return
+    requestAnimationFrame(() => {
+      if (!stickToBottomRef.current) return
+      scrollMessagesToBottom()
+    })
+  }, [messages, waitingForAssistantReply, loading, messageListScrollRef])
+
+  /** When the user sends a message, re-pin and jump to the latest turn. */
+  const wasWaitingRef = useRef(waitingForAssistantReply)
+  useEffect(() => {
+    const startedWaiting = !wasWaitingRef.current && waitingForAssistantReply
+    wasWaitingRef.current = waitingForAssistantReply
+    if (!startedWaiting) return
+    setStickToBottom(true)
+    requestAnimationFrame(() => {
+      scrollMessagesToBottom()
+    })
+  }, [waitingForAssistantReply, messageListScrollRef])
+
+  /** Catch streaming text / tool-block growth while still stuck to bottom. */
+  useEffect(() => {
+    const el = messageListScrollRef?.current
+    if (!el || typeof MutationObserver === 'undefined') return
+    const observer = new MutationObserver(() => {
+      if (!stickToBottomRef.current) return
+      scrollMessagesToBottom()
+    })
+    observer.observe(el, { childList: true, subtree: true, characterData: true })
+    return () => observer.disconnect()
+  }, [messageListScrollRef, sessionId])
+
+  /** Reset pin when switching sessions. */
+  useEffect(() => {
+    setStickToBottom(true)
+  }, [sessionId])
 
   return (
     <div
@@ -238,37 +366,6 @@ export default function MessagePanel({
         </div>
       )}
 
-      {waitingForAssistantReply && !loading && (
-        <div
-          style={{
-            flexShrink: 0,
-            padding: '8px 16px',
-            fontSize: 12,
-            color: '#4338ca',
-            background: 'linear-gradient(90deg, #eef2ff 0%, #faf5ff 100%)',
-            borderBottom: '1px solid #c7d2fe',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-          }}
-        >
-          <span
-            aria-hidden
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: '50%',
-              background: '#6366f1',
-              flexShrink: 0,
-            }}
-          />
-          <span style={{ fontWeight: 600 }}>Waiting for the model…</span>
-          <span style={{ color: '#64748b', fontWeight: 400 }}>
-            Polling in the background — if nothing appears, check OpenCode logs or upstream queue delays.
-          </span>
-        </div>
-      )}
-
       {/* Messages (scrollable) */}
       <div
         style={{
@@ -279,6 +376,11 @@ export default function MessagePanel({
       >
         <div
           ref={messageListScrollRef}
+          onScroll={() => {
+            updateStickToBottomFromScroll()
+            experimentTelemetry.onScroll('chat', sessionId || undefined)
+          }}
+          onWheel={handleMessageListWheel}
           style={{
             height: '100%',
             overflowY: 'auto',
@@ -331,6 +433,42 @@ export default function MessagePanel({
             })
           )}
         </div>
+        {!pinnedToLatest && !loading && messages.length > 0 ? (
+          <button
+            type="button"
+            aria-label="Jump to latest message"
+            title="Jump to latest"
+            onClick={jumpToLatest}
+            style={{
+              position: 'absolute',
+              right: 28,
+              bottom: 16,
+              zIndex: 2,
+              width: 36,
+              height: 36,
+              borderRadius: 18,
+              border: '1px solid #E5E5E5',
+              background: '#FFFFFF',
+              color: '#333',
+              boxShadow: '0 2px 10px rgba(0,0,0,0.10)',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 0,
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path
+                d="M8 3v9M4.5 8.5 8 12l3.5-3.5"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        ) : null}
         {messageListScrollRef ? (
           <ScrollNodeRail scrollContainerRef={messageListScrollRef} markers={userPromptMarkers} right={8} />
         ) : null}
@@ -346,9 +484,22 @@ export default function MessagePanel({
             highlightTodoIds={highlightTodoIds}
             todoPanelRevealGeneration={todoPanelRevealGeneration}
             onTodoClick={onTodoClick}
+            onPanelClick={onTodoPanelClick}
             listScrollRef={todoPanelScrollRef}
           />
         </div>
+      )}
+
+      {pendingPermission &&
+        pendingPermission.sessionID === sessionId &&
+        onPermissionReply && (
+        <PermissionPromptPanel
+          request={pendingPermission}
+          disabled={loading}
+          submitting={permissionSubmitting}
+          queueSize={pendingPermissionQueueSize}
+          onReply={onPermissionReply}
+        />
       )}
 
       {pendingQuestion &&
@@ -368,9 +519,9 @@ export default function MessagePanel({
       <div style={{ flexShrink: 0 }}>
         <MessageInput
           onSend={onSendMessage}
-          disabled={!sessionId || loading || questionSubmitting || blockComposerForQuestion}
+          disabled={!sessionId || loading || questionSubmitting || permissionSubmitting || blockComposerForQuestion || blockComposerForPermission}
           onAbort={onAbortMessage}
-          isRunning={hasRunningTool}
+          isRunning={agentBusy}
           aborting={aborting}
           sessionId={sessionId}
           composerModelRef={composerModelRef}

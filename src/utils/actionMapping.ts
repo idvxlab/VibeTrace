@@ -435,12 +435,18 @@ function partToMappedAction(
         detail: text.slice(0, 80),
       }
     }
-    case 'compaction':
+    case 'compaction': {
+      const cp = part as { text?: string; auto?: boolean; overflow?: boolean }
+      const detailBits = [
+        cp.auto === true ? 'auto' : cp.auto === false ? 'manual' : null,
+        cp.overflow ? 'overflow' : null,
+        cp.text?.trim() ? cp.text.trim().slice(0, 80) : null,
+      ].filter(Boolean)
       return {
         actionType: 'Compaction',
         status: 'completed',
         durationMs: 400,
-        tokenEstimate: estimateTokensFromStrings(part.text),
+        tokenEstimate: estimateTokensFromStrings(cp.text),
         sortTime,
         source: 'part',
         sessionID: message.info.sessionID,
@@ -448,7 +454,9 @@ function partToMappedAction(
         partIndex,
         messageIndex,
         partId: part.id,
+        detail: detailBits.length > 0 ? detailBits.join(' · ') : 'compaction',
       }
+    }
     case 'tool': {
       const mappedType = mapToolToActionType(part.tool)
       if (!mappedType) return null
@@ -575,30 +583,135 @@ export function mapSseToMappedActions(events: OcSseActionEvent[]): (MappedAction
   const out: (MappedAction & { row: number })[] = []
   for (const ev of events) {
     if (ev.type === 'permission.asked') {
+      const p = ev.permission
+      const detail = p
+        ? [
+            p.permission,
+            p.patterns.length ? p.patterns.slice(0, 3).join(', ') : null,
+          ]
+            .filter(Boolean)
+            .join(' · ')
+        : safeDetail(ev.raw)
       out.push({
         actionType: 'Permission',
         status: 'pending',
-        durationMs: 0,
+        durationMs: Math.max(0, Date.now() - ev.time),
         tokenEstimate: 0,
         sortTime: ev.time,
         source: 'sse-permission',
-        detail: safeDetail(ev.raw),
+        detail: detail.slice(0, 160),
+        messageID: p?.tool?.messageID,
+        callID: p?.tool?.callID,
         row: actionRowForBand(0, 'Permission'),
       })
-    } else if (ev.type === 'session.compacted') {
+    } else if (
+      ev.type === 'session.compacted' ||
+      ev.type === 'session.next.compaction.started' ||
+      ev.type === 'session.next.compaction.ended' ||
+      ev.type === 'session.next.compaction.delta'
+    ) {
+      const status = ev.compaction?.status ?? (ev.type.includes('started') || ev.type.includes('delta') ? 'running' : 'completed')
       out.push({
         actionType: 'Compaction',
-        status: 'completed',
-        durationMs: 600,
+        status,
+        durationMs: status === 'running' ? Math.max(0, Date.now() - ev.time) : 600,
         tokenEstimate: 0,
         sortTime: ev.time,
         source: 'sse-session',
-        detail: 'session.compacted',
+        detail: ev.compaction?.detail ?? ev.type,
+        sessionID: ev.sessionID,
         row: actionRowForBand(0, 'Compaction'),
       })
     }
   }
   return out
+}
+
+/** Build a live Permission MappedAction from a pending request (for action-flow merge). */
+export function mappedActionFromPendingPermission(
+  p: { permission: string; patterns: string[]; askedAt?: number; tool?: { messageID: string; callID: string }; id?: string },
+  nowMs = Date.now(),
+): MappedAction & { row: number } {
+  const askedAt = p.askedAt ?? nowMs
+  const detail = [p.permission, p.patterns.length ? p.patterns.slice(0, 3).join(', ') : null]
+    .filter(Boolean)
+    .join(' · ')
+  return {
+    actionType: 'Permission',
+    status: 'pending',
+    durationMs: Math.max(0, nowMs - askedAt),
+    tokenEstimate: 0,
+    sortTime: askedAt,
+    source: 'sse-permission',
+    detail: detail.slice(0, 160),
+    messageID: p.tool?.messageID,
+    callID: p.tool?.callID ?? (p.id ? `permission:${p.id}` : undefined),
+    partId: p.id ? `permission:${p.id}` : undefined,
+    row: actionRowForBand(0, 'Permission'),
+  }
+}
+
+/** Permission trail node — stays on the flow after the user replies. */
+export function mappedActionFromPermissionTrace(
+  t: {
+    id: string
+    permission: string
+    patterns: string[]
+    askedAt: number
+    repliedAt?: number
+    reply?: string
+    status: 'pending' | 'running' | 'completed' | 'error'
+    tool?: { messageID: string; callID: string }
+    sessionID?: string
+  },
+  nowMs = Date.now(),
+): MappedAction & { row: number } {
+  const end = t.repliedAt ?? (t.status === 'pending' ? nowMs : t.askedAt)
+  const replyBit =
+    t.reply === 'once'
+      ? 'allow once'
+      : t.reply === 'always'
+        ? 'always'
+        : t.reply === 'reject'
+          ? 'reject'
+          : t.status === 'pending'
+            ? 'asking'
+            : null
+  const detail = [t.permission, t.patterns.length ? t.patterns.slice(0, 3).join(', ') : null, replyBit]
+    .filter(Boolean)
+    .join(' · ')
+  return {
+    actionType: 'Permission',
+    status: t.status,
+    durationMs: Math.max(0, end - t.askedAt),
+    tokenEstimate: 0,
+    sortTime: t.askedAt,
+    source: 'sse-permission',
+    detail: detail.slice(0, 160),
+    sessionID: t.sessionID,
+    messageID: t.tool?.messageID,
+    callID: t.tool?.callID ?? `permission:${t.id}`,
+    partId: `permission:${t.id}`,
+    row: actionRowForBand(0, 'Permission'),
+  }
+}
+
+/** Build a live Compaction MappedAction from an SSE compaction marker. */
+export function mappedActionFromCompactionEvent(
+  ev: { time: number; status: 'running' | 'completed'; detail?: string; sessionID?: string },
+  nowMs = Date.now(),
+): MappedAction & { row: number } {
+  return {
+    actionType: 'Compaction',
+    status: ev.status,
+    durationMs: ev.status === 'running' ? Math.max(0, nowMs - ev.time) : 600,
+    tokenEstimate: 0,
+    sortTime: ev.time,
+    source: 'sse-session',
+    detail: (ev.detail ?? 'session.compacted').slice(0, 160),
+    sessionID: ev.sessionID,
+    row: actionRowForBand(0, 'Compaction'),
+  }
 }
 
 function safeDetail(raw: unknown): string {

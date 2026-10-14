@@ -1,0 +1,29 @@
+[project]
+name = "vibetrace"
+version = "0.1.0"
+description = "Feedback-aware Skill Self-Evolution framework for OpenCode on SWE-Bench Verified"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pyyaml>=6.0",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+eval = [
+    "swebench>=3.0.0",
+]
+data = [
+    "pandas>=2.0",
+    "pyarrow>=14.0",
+]
+
+[project.scripts]
+evolve = "src.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]

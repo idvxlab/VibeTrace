@@ -13,6 +13,7 @@ $lines = @(
   "MEMORY_WORKER_PROXY_TARGET=http://127.0.0.1:8714",
   "OPENCODE_DIRECTORY=$($root -replace '\\', '/')",
   "SKILL_WRITE_ROOT=",
+  "MW_SKILL_PIPELINE=legacy",
   "MW_ANALYZER_MODE=opencode",
   "MW_WRITER_MODE=opencode",
   "MW_SESSION_STRATEGY=new",

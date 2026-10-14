@@ -297,7 +297,9 @@ export function deriveSubtaskTitle(
   }
   if (st.todosNewlyCompleted.length > 0) {
     const first = st.todosNewlyCompleted[0]!
-    const head = first.content.length > 36 ? `${first.content.slice(0, 36)}…` : first.content
+    // Keep a generous first-todo snippet; the card UI truncates/expands for display.
+    const head =
+      first.content.length > 120 ? `${first.content.slice(0, 120).trimEnd()}…` : first.content
     const more =
       st.todosNewlyCompleted.length > 1 ? ` +${st.todosNewlyCompleted.length - 1} more` : ''
     return `Done: ${head}${more}`
@@ -308,8 +310,10 @@ export function deriveSubtaskTitle(
     if (msg) {
       for (const p of msg.parts) {
         if (p.type === 'text' && p.text?.trim()) {
-          const line = p.text.trim().split(/\n/)[0]!.slice(0, 44)
-          return line.length >= 44 ? `${line}…` : line
+          // Prefer the full first line (capped) so expand-to-wrap can show the real title.
+          const line = p.text.trim().split(/\n/)[0]!
+          if (line.length > 200) return `${line.slice(0, 200).trimEnd()}…`
+          return line
         }
       }
     }
@@ -328,18 +332,43 @@ export function formatDurationMs(ms: number | null | undefined): string {
   return `${m}m${rs > 0 ? `${rs}s` : ''}`
 }
 
-export function buildSubtaskCardMetrics(
-  st: AssistantSubtask,
-  messages: OcMessage[],
-  displayIndex: number,
-  options?: {
-    nowMs?: number
-    /** Child session messages (task/subagent): merged into Changes (write/edit paths). */
-    additionalMessages?: OcMessage[]
-  },
-): SubtaskCardMetrics {
-  const indices = st.assistantMessageIndices
-  const msgs = indices.map(i => messages[i]).filter((m): m is OcMessage => !!m)
+/** Wall-clock span for a flat assistant message list (no global index gaps to exclude). */
+export function computeDurationFromMessages(
+  msgs: OcMessage[],
+  nowMs: number,
+): number | null {
+  const assistants = msgs.filter((m) => m.info.role === 'assistant')
+  if (assistants.length === 0) return null
+  let minCreated = Infinity
+  let maxEnd = -Infinity
+  for (const m of assistants) {
+    const c = m.info.time.created
+    const e = assistantMessageEndMs(m, nowMs)
+    minCreated = Math.min(minCreated, c)
+    maxEnd = Math.max(maxEnd, e)
+  }
+  if (!Number.isFinite(minCreated) || maxEnd < minCreated) return null
+  const ms = maxEnd - minCreated
+  return ms > 0 ? ms : null
+}
+
+/**
+ * Core strip / flow-end metrics from concrete message objects (used by live cards and fork prefix merge).
+ */
+export function buildSubtaskCardMetricsFromMessages(opts: {
+  title: string
+  assistantMessages: OcMessage[]
+  additionalMessages?: OcMessage[]
+  assistantMessageIndices?: number[]
+  todosResolvedCount?: number
+  nowMs?: number
+  /** When set with `allMessages`, duration excludes user gaps between contiguous assistant index runs. */
+  durationAssistantIndices?: number[]
+  durationAllMessages?: OcMessage[]
+}): SubtaskCardMetrics {
+  const msgs = opts.assistantMessages
+  const additional = opts.additionalMessages ?? []
+  const nowMs = opts.nowMs ?? Date.now()
 
   const bd: SubtaskTokenBreakdown = {
     input: 0,
@@ -375,12 +404,12 @@ export function buildSubtaskCardMetrics(
 
   const paths = new Set<string>()
   collectMutatedPathsFromMessages(msgs, paths)
-  if (options?.additionalMessages?.length) {
-    collectMutatedPathsFromMessages(options.additionalMessages, paths)
+  if (additional.length) {
+    collectMutatedPathsFromMessages(additional, paths)
   }
   const mutatedFilePaths = [...paths].sort()
 
-  const allForRead: OcMessage[] = [...msgs, ...(options?.additionalMessages ?? [])]
+  const allForRead: OcMessage[] = [...msgs, ...additional]
   const readStats = collectReadFileStatsFromMessages(allForRead)
   const readFilePaths = readStats.readPathsSorted
   const globMatchFileCount = readStats.globFileHits
@@ -388,12 +417,18 @@ export function buildSubtaskCardMetrics(
   const webSearchQueries = collectWebSearchQueriesFromMessages(allForRead)
   const webSearchCallCount = webSearchQueries.length
 
-  const nowMs = options?.nowMs ?? Date.now()
-  const durationMs = computeSubtaskDurationExcludingUserGaps(indices, messages, nowMs)
+  const durationMs =
+    opts.durationAssistantIndices && opts.durationAllMessages
+      ? computeSubtaskDurationExcludingUserGaps(
+          opts.durationAssistantIndices,
+          opts.durationAllMessages,
+          nowMs,
+        )
+      : computeDurationFromMessages(msgs, nowMs)
 
   return {
-    title: deriveSubtaskTitle(st, messages, displayIndex),
-    assistantMessageIndices: [...indices],
+    title: opts.title,
+    assistantMessageIndices: opts.assistantMessageIndices ? [...opts.assistantMessageIndices] : [],
     partCount: countPartsInMessages(msgs),
     tokensSegmentSum,
     tokenBreakdown: bd,
@@ -408,8 +443,80 @@ export function buildSubtaskCardMetrics(
     durationMs,
     costSegmentSum,
     costEstimatedUsd,
-    todosResolvedCount: st.todosNewlyCompleted.length,
+    todosResolvedCount: opts.todosResolvedCount ?? 0,
   }
+}
+
+/** Add two metric strips (fork prefix + live branch). Durations sum (user gap between them stays excluded). */
+export function mergeSubtaskCardMetrics(
+  prefix: SubtaskCardMetrics,
+  live: SubtaskCardMetrics,
+): SubtaskCardMetrics {
+  const bd: SubtaskTokenBreakdown = {
+    input: prefix.tokenBreakdown.input + live.tokenBreakdown.input,
+    output: prefix.tokenBreakdown.output + live.tokenBreakdown.output,
+    reasoning: prefix.tokenBreakdown.reasoning + live.tokenBreakdown.reasoning,
+    cacheRead: prefix.tokenBreakdown.cacheRead + live.tokenBreakdown.cacheRead,
+    cacheWrite: prefix.tokenBreakdown.cacheWrite + live.tokenBreakdown.cacheWrite,
+    total: 0,
+  }
+  bd.total = bd.input + bd.output + bd.reasoning + bd.cacheRead + bd.cacheWrite
+
+  const mutatedPaths = new Set([...prefix.mutatedFilePaths, ...live.mutatedFilePaths])
+  const mutatedFilePaths = [...mutatedPaths].sort()
+  const readPaths = new Set([...prefix.readFilePaths, ...live.readFilePaths])
+  const readFilePaths = [...readPaths].sort()
+  const globMatchFileCount = prefix.globMatchFileCount + live.globMatchFileCount
+  const webSearchQueries = [...prefix.webSearchQueries, ...live.webSearchQueries]
+
+  const durationParts = [prefix.durationMs, live.durationMs].filter(
+    (v): v is number => v != null && Number.isFinite(v) && v >= 0,
+  )
+  const durationMs = durationParts.length ? durationParts.reduce((a, b) => a + b, 0) : null
+
+  return {
+    title: live.title,
+    assistantMessageIndices: [...prefix.assistantMessageIndices, ...live.assistantMessageIndices],
+    partCount: prefix.partCount + live.partCount,
+    tokensSegmentSum: prefix.tokensSegmentSum + live.tokensSegmentSum,
+    tokenBreakdown: bd,
+    llmCallCount: prefix.llmCallCount + live.llmCallCount,
+    mutatedFilePaths,
+    mutatedFileCount: mutatedFilePaths.length,
+    readFilesCount: readFilePaths.length + globMatchFileCount,
+    readFilePaths,
+    globMatchFileCount,
+    webSearchQueries,
+    webSearchCallCount: webSearchQueries.length,
+    durationMs,
+    costSegmentSum: prefix.costSegmentSum + live.costSegmentSum,
+    costEstimatedUsd: estimateCostUsdFromTokenBreakdown(bd),
+    todosResolvedCount: prefix.todosResolvedCount + live.todosResolvedCount,
+  }
+}
+
+export function buildSubtaskCardMetrics(
+  st: AssistantSubtask,
+  messages: OcMessage[],
+  displayIndex: number,
+  options?: {
+    nowMs?: number
+    /** Child session messages (task/subagent): merged into Changes (write/edit paths). */
+    additionalMessages?: OcMessage[]
+  },
+): SubtaskCardMetrics {
+  const indices = st.assistantMessageIndices
+  const msgs = indices.map((i) => messages[i]).filter((m): m is OcMessage => !!m)
+  return buildSubtaskCardMetricsFromMessages({
+    title: deriveSubtaskTitle(st, messages, displayIndex),
+    assistantMessages: msgs,
+    additionalMessages: options?.additionalMessages,
+    assistantMessageIndices: indices,
+    todosResolvedCount: st.todosNewlyCompleted.length,
+    nowMs: options?.nowMs,
+    durationAssistantIndices: indices,
+    durationAllMessages: messages,
+  })
 }
 
 /** Message + part refs for this subtask (for downstream visualization). */

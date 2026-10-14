@@ -1,0 +1,7 @@
+﻿participant,chat_%,trajectory_%,todo_%,tooltip_%,skill_%,session_%,taskbar_%,vibetrace_%,todo_clicks,traj_clicks,fork,distill,turns,dominant_loop,usage_style,extra_behaviors
+P1,74.0,12.0,10.0,1.0,0.0,1.0,2.0,25.0,6,10,0,0,2,chat ↔ trajectory 来回切换,对话与轨迹交替核对,看完轨迹回 chat 读 agent 输出
+P2,40.0,38.0,12.0,2.0,2.0,2.0,4.0,58.0,38,15,1,1,5,chat → todo → trajectory →（回到）chat,先用 Todo 定位，再进右侧轨迹核对,todo 后再进轨迹定位；看完轨迹回 chat 读 agent 输出
+P3,40.0,38.0,10.0,3.0,2.0,2.0,5.0,58.0,25,39,1,0,5,chat ↔ trajectory 来回切换,对话与轨迹交替核对,看完轨迹回 chat 读 agent 输出；skill 生成后会点开 skill/tooltip
+P4,42.0,35.0,12.0,3.0,2.0,2.0,4.0,56.0,15,20,1,1,4,chat → todo → trajectory →（回到）chat,先用 Todo 定位，再进右侧轨迹核对,todo 后再进轨迹定位；skill 生成后会点开 skill/tooltip
+P5,35.0,40.0,2.0,7.0,3.0,7.0,6.0,58.0,0,30,3,0,9,chat ↔ trajectory（夹杂 session）,右侧轨迹深查，会话切换较频繁,看完轨迹回 chat 读 agent 输出；轨迹与 skill 之间切换
+P6,42.0,34.0,4.0,8.0,4.0,5.0,3.0,53.0,13,64,0,0,2,chat ↔ trajectory 来回切换,对话与轨迹交替核对,todo 后再进轨迹定位；看完轨迹回 chat 读 agent 输出；轨迹与 skill 之间切换

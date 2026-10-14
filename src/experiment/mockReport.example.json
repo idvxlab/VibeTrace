@@ -1,0 +1,163 @@
+{
+  "schemaVersion": "experiment.report.v1",
+  "participantId": "P03",
+  "experimentId": "exp_m5k2x9_a1b2c3d4",
+  "directory": "/Users/alice/tasks/fix-login-bug",
+  "startedAt": "2026-07-28T02:10:00.000Z",
+  "endedAt": "2026-07-28T02:42:18.500Z",
+  "durationMs": 1938500,
+  "sessionIds": [
+    "ses_aaa111",
+    "ses_bbb222",
+    "ses_ccc333"
+  ],
+  "counters": {
+    "manualSessionsCreated": 2,
+    "conversationTurns": 14,
+    "chatPanelScrolls": 11,
+    "trajectoryPanelScrolls": 7,
+    "trajectoryPanelClicks": 23,
+    "todoClicks": 9,
+    "actionTooltipShows": 31,
+    "flowEndSummaryTooltipShows": 6,
+    "trajectoriesViewed": 8,
+    "taskTabsSeen": 3,
+    "skillsDistilled": 2,
+    "forksCompleted": 1,
+    "skillPanelClicks": 4,
+    "subtaskPanelsGenerated": 12,
+    "chatPanelFocusMs": 606140,
+    "todoPanelFocusMs": 170962,
+    "sessionPanelFocusMs": 6435,
+    "taskBarFocusMs": 48800,
+    "trajectoryPanelFocusMs": 561200,
+    "skillPanelFocusMs": 28600,
+    "tooltipPanelFocusMs": 7865
+  },
+  "firstInteractionAt": {
+    "chat": "2026-07-28T02:12:40.001Z",
+    "trajectory": "2026-07-28T02:15:23.010Z",
+    "todo": "2026-07-28T02:15:22.440Z",
+    "skill": "2026-07-28T02:35:00.000Z",
+    "session": "2026-07-28T02:11:20.000Z",
+    "task": "2026-07-28T02:15:24.200Z"
+  },
+  "derived": {
+    "chatFocusRatio": 0.4239,
+    "todoFocusRatio": 0.1196,
+    "sessionFocusRatio": 0.0045,
+    "taskBarFocusRatio": 0.0341,
+    "trajectoryFocusRatio": 0.3924,
+    "skillFocusRatio": 0.02,
+    "tooltipFocusRatio": 0.0055,
+    "panelFocusShares": {
+      "chat": 0.4239,
+      "todo": 0.1196,
+      "session": 0.0045,
+      "task": 0.0341,
+      "trajectory": 0.3924,
+      "skill": 0.02,
+      "tooltip": 0.0055
+    },
+    "chatScrollShare": 0.6111,
+    "trajectoryInteractionShare": 0.8036,
+    "firstInteractionOrder": ["session", "chat", "todo", "trajectory", "task", "skill"],
+    "firstInteractionMs": {
+      "chat": 160001,
+      "trajectory": 323010,
+      "todo": 322440,
+      "skill": 1500000,
+      "session": 80000,
+      "task": 324200
+    },
+    "panelViewCoverage": 0.6667
+  },
+  "events": [
+    {
+      "ts": "2026-07-28T02:10:00.000Z",
+      "event": "experiment.start",
+      "directory": "/Users/alice/tasks/fix-login-bug",
+      "props": {
+        "participantId": "P03",
+        "directory": "/Users/alice/tasks/fix-login-bug"
+      }
+    },
+    {
+      "ts": "2026-07-28T02:11:05.120Z",
+      "event": "session.create",
+      "sessionId": "ses_aaa111",
+      "directory": "/Users/alice/tasks/fix-login-bug"
+    },
+    {
+      "ts": "2026-07-28T02:12:40.001Z",
+      "event": "region.first",
+      "directory": "/Users/alice/tasks/fix-login-bug",
+      "props": { "region": "chat", "via": "chat.turn" }
+    },
+    {
+      "ts": "2026-07-28T02:12:40.001Z",
+      "event": "chat.turn",
+      "sessionId": "ses_aaa111",
+      "directory": "/Users/alice/tasks/fix-login-bug"
+    },
+    {
+      "ts": "2026-07-28T02:15:22.440Z",
+      "event": "region.first",
+      "directory": "/Users/alice/tasks/fix-login-bug",
+      "props": { "region": "todo", "via": "todo.click" }
+    },
+    {
+      "ts": "2026-07-28T02:15:22.440Z",
+      "event": "todo.click",
+      "sessionId": "ses_aaa111",
+      "directory": "/Users/alice/tasks/fix-login-bug",
+      "props": { "todoId": "todo_auth_redirect" }
+    },
+    {
+      "ts": "2026-07-28T02:15:23.010Z",
+      "event": "region.first",
+      "directory": "/Users/alice/tasks/fix-login-bug",
+      "props": { "region": "trajectory", "via": "trajectory.view" }
+    },
+    {
+      "ts": "2026-07-28T02:15:23.010Z",
+      "event": "trajectory.view",
+      "sessionId": "ses_aaa111",
+      "directory": "/Users/alice/tasks/fix-login-bug",
+      "props": { "subtaskId": "subtask_4" }
+    },
+    {
+      "ts": "2026-07-28T02:16:01.800Z",
+      "event": "tooltip.action",
+      "sessionId": "ses_aaa111",
+      "directory": "/Users/alice/tasks/fix-login-bug",
+      "props": { "source": "timeline" }
+    },
+    {
+      "ts": "2026-07-28T02:16:44.200Z",
+      "event": "tooltip.flow_end_summary",
+      "sessionId": "ses_aaa111",
+      "directory": "/Users/alice/tasks/fix-login-bug"
+    },
+    {
+      "ts": "2026-07-28T02:28:10.000Z",
+      "event": "fork.complete",
+      "sessionId": "ses_aaa111",
+      "directory": "/Users/alice/tasks/fix-login-bug",
+      "props": { "forkedSessionId": "ses_bbb222" }
+    },
+    {
+      "ts": "2026-07-28T02:35:00.000Z",
+      "event": "skill.distill",
+      "sessionId": "ses_aaa111",
+      "directory": "/Users/alice/tasks/fix-login-bug",
+      "props": { "skillName": "fix-redirect-checklist" }
+    },
+    {
+      "ts": "2026-07-28T02:42:18.500Z",
+      "event": "experiment.end",
+      "directory": "/Users/alice/tasks/fix-login-bug"
+    }
+  ],
+  "notes": "Mock sample only — replace with a real End & Save export."
+}

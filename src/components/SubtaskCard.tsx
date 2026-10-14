@@ -1,7 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import type { MappedAction, OcMessage } from '../types/opencode'
-import type { AssistantSubtask } from '../utils/subtaskGrouping'
-import { buildSubtaskCardMetrics, formatDurationMs, formatSubtaskCostDisplay } from '../utils/subtaskMetrics'
+import type {
+  MappedAction,
+  OcMessage,
+  OcPendingPermissionRequest,
+  OcPermissionTraceEvent,
+  OcSessionCompactionEvent,
+} from '../types/opencode'
+import { type AssistantSubtask } from '../utils/subtaskGrouping'
+import { isSubtaskPanelSealed } from '../utils/panelSeal'
+import {
+  buildSubtaskCardMetrics,
+  formatDurationMs,
+  formatSubtaskCostDisplay,
+  mergeSubtaskCardMetrics,
+} from '../utils/subtaskMetrics'
 import { buildFlowEndSummary } from '../utils/flowEndSummary'
 import {
   applyParallelLayoutFromCalls,
@@ -12,16 +24,22 @@ import {
   detectParallelCallMapping,
   extractChildSessionIdFromToolPart,
   isSubagentToolName,
+  mappedActionFromCompactionEvent,
+  mappedActionFromPermissionTrace,
+  mergeActions,
 } from '../utils/actionMapping'
-import type { ForkFromActionContext, ForkPanelSnapshotBundle } from '../utils/forkPanelSnapshot'
+import {
+  buildForkPrefixMetricsFromSnapshot,
+  type ForkFromActionContext,
+  type ForkPanelSnapshotBundle,
+} from '../utils/forkPanelSnapshot'
 import { mergeMessagesForActionTooltipLookup } from '../utils/actionTooltipMapping'
-import type { TooltipTranslateFn } from '../utils/tooltipTranslate'
-import { collectTooltipTranslatableStrings, prewarmTooltipTranslations } from '../utils/tooltipTranslate'
 import ActionFlowVisualization from './ActionFlowVisualization'
 import {
   type ActionTypePaletteId,
 } from '../styles/actionTypePalettes'
 import { getMessages } from '../services/opencodeApi'
+import { experimentTelemetry } from '../experiment/telemetry'
 import { actionKey } from '../utils/actionKey'
 import type { MemoryWorkerErrorDiagnosis } from '../services/memoryWorkerApi'
 
@@ -55,7 +73,175 @@ function readSvgSize(svg: SVGSVGElement): { width: number; height: number } {
   return { width: Math.ceil(box.width), height: Math.ceil(box.height) }
 }
 
-async function downloadSvgAsPng(svg: SVGSVGElement, filename: string): Promise<void> {
+/**
+ * Icons tint via `style="color: …"` + `currentColor`. Standalone SVG viewers often ignore that and
+ * fall back to black — bake the computed color into fill/stroke before export.
+ */
+function bakeCurrentColorForSvgExport(root: SVGSVGElement): void {
+  const iconGroups = root.querySelectorAll<SVGGElement>('g.action-flow-action-icon')
+  for (const group of iconGroups) {
+    const color =
+      group.style.color?.trim() ||
+      group.getAttribute('style')?.match(/(?:^|;)\s*color\s*:\s*([^;]+)/i)?.[1]?.trim()
+    if (!color || color === 'currentColor') continue
+
+    const painted = group.querySelectorAll<SVGElement>('[fill], [stroke]')
+    for (const el of painted) {
+      if (el.getAttribute('fill') === 'currentColor') el.setAttribute('fill', color)
+      if (el.getAttribute('stroke') === 'currentColor') el.setAttribute('stroke', color)
+    }
+  }
+}
+
+/** Turn `url(http://host/app#id)` / `url("#id")` into a file-local `url(#id)`. */
+function toLocalFragmentUrl(value: string): string {
+  return value.replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/gi, (_full, _q: string, ref: string) => {
+    const hashIdx = ref.lastIndexOf('#')
+    if (hashIdx < 0) return `url(${ref})`
+    const id = ref.slice(hashIdx + 1).replace(/['"]/g, '')
+    return id ? `url(#${id})` : _full
+  })
+}
+
+/**
+ * Live DOM often expands `url(#id)` into absolute page URLs (`url(http://host/#id)`).
+ * Standalone SVG files then lose arrow markers / masks — rewrite every paint server ref to `#id`.
+ */
+function rewriteLocalUrlRefsForSvgExport(root: SVGSVGElement): void {
+  const attrs = [
+    'marker-end',
+    'marker-start',
+    'marker-mid',
+    'fill',
+    'stroke',
+    'filter',
+    'clip-path',
+    'mask',
+    'href',
+    'xlink:href',
+  ] as const
+
+  const walk = (el: Element) => {
+    for (const attr of attrs) {
+      const raw = el.getAttribute(attr)
+      if (!raw || !/url\(/i.test(raw)) continue
+      el.setAttribute(attr, toLocalFragmentUrl(raw))
+    }
+    const style = el.getAttribute('style')
+    if (style && /url\(/i.test(style)) {
+      el.setAttribute('style', toLocalFragmentUrl(style))
+    }
+    for (const child of Array.from(el.children)) walk(child)
+  }
+  walk(root)
+}
+
+type ExportMarkerDef = {
+  d: string
+  fill: string
+  refX: number
+  refY: number
+  markerWidth: number
+  markerHeight: number
+  vbW: number
+  vbH: number
+}
+
+function readMarkerDefs(root: SVGSVGElement): Map<string, ExportMarkerDef> {
+  const out = new Map<string, ExportMarkerDef>()
+  for (const marker of root.querySelectorAll('marker')) {
+    const id = marker.getAttribute('id')
+    if (!id) continue
+    const path = marker.querySelector('path')
+    const vbParts = (marker.getAttribute('viewBox') || '0 -5 10 10').trim().split(/\s+/).map(Number)
+    const vbW = Number.isFinite(vbParts[2]) && vbParts[2]! > 0 ? vbParts[2]! : 10
+    const vbH = Number.isFinite(vbParts[3]) && vbParts[3]! > 0 ? vbParts[3]! : 10
+    out.set(id, {
+      d: path?.getAttribute('d') || 'M0,-5L10,0L0,5',
+      fill: path?.getAttribute('fill') || '#9AA0A6',
+      refX: Number(marker.getAttribute('refX') || 0),
+      refY: Number(marker.getAttribute('refY') || 0),
+      markerWidth: Number(marker.getAttribute('markerWidth') || 5),
+      markerHeight: Number(marker.getAttribute('markerHeight') || 5),
+      vbW,
+      vbH,
+    })
+  }
+  return out
+}
+
+function markerIdFromRef(raw: string | null | undefined): string | null {
+  if (!raw) return null
+  const hashIdx = raw.lastIndexOf('#')
+  if (hashIdx < 0) return null
+  const id = raw.slice(hashIdx + 1).replace(/['"\)]/g, '').trim()
+  return id || null
+}
+
+/**
+ * Many standalone SVG viewers (Preview / some editors) drop `marker-end` arrowheads.
+ * Measure tips on the live SVG, then bake real `<path>` geometry into the clone.
+ */
+function inlineArrowMarkersForSvgExport(liveRoot: SVGSVGElement, cloneRoot: SVGSVGElement): void {
+  const markers = readMarkerDefs(cloneRoot)
+  if (markers.size === 0) return
+
+  const liveEls = liveRoot.querySelectorAll<SVGGeometryElement>('path, line, polyline')
+  const cloneEls = cloneRoot.querySelectorAll<SVGGeometryElement>('path, line, polyline')
+
+  for (let i = 0; i < liveEls.length; i++) {
+    const liveEl = liveEls[i]!
+    const cloneEl = cloneEls[i]
+    if (!cloneEl) continue
+
+    const endId = markerIdFromRef(
+      liveEl.getAttribute('marker-end') || cloneEl.getAttribute('marker-end'),
+    )
+    if (!endId) continue
+    const marker = markers.get(endId)
+    if (!marker) continue
+
+    let tipX = 0
+    let tipY = 0
+    let angleDeg = 0
+    try {
+      if (typeof liveEl.getTotalLength !== 'function' || typeof liveEl.getPointAtLength !== 'function') {
+        continue
+      }
+      const len = liveEl.getTotalLength()
+      if (!(len > 0)) continue
+      const tip = liveEl.getPointAtLength(len)
+      const before = liveEl.getPointAtLength(Math.max(0, len - Math.min(2, len)))
+      tipX = tip.x
+      tipY = tip.y
+      angleDeg = (Math.atan2(tip.y - before.y, tip.x - before.x) * 180) / Math.PI
+    } catch {
+      continue
+    }
+
+    const strokeWidth = Number(
+      cloneEl.getAttribute('stroke-width') || liveEl.getAttribute('stroke-width') || 1.5,
+    )
+    const sx = (marker.markerWidth / marker.vbW) * strokeWidth
+    const sy = (marker.markerHeight / marker.vbH) * strokeWidth
+
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g')
+    g.setAttribute('data-export-arrow', '1')
+    g.setAttribute(
+      'transform',
+      `translate(${tipX}, ${tipY}) rotate(${angleDeg}) scale(${sx}, ${sy}) translate(${-marker.refX}, ${-marker.refY})`,
+    )
+    const arrow = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    arrow.setAttribute('d', marker.d)
+    arrow.setAttribute('fill', marker.fill)
+    arrow.setAttribute('stroke', 'none')
+    g.appendChild(arrow)
+    cloneEl.parentNode?.insertBefore(g, cloneEl.nextSibling)
+    cloneEl.removeAttribute('marker-end')
+  }
+}
+
+function downloadSvg(svg: SVGSVGElement, filename: string): void {
   if (svg.childElementCount === 0) throw new Error('The action flow has not rendered yet.')
 
   const { width, height } = readSvgSize(svg)
@@ -65,62 +251,41 @@ async function downloadSvgAsPng(svg: SVGSVGElement, filename: string): Promise<v
 
   const clone = svg.cloneNode(true) as SVGSVGElement
   clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
-  clone.setAttribute('width', String(width))
-  clone.setAttribute('height', String(height))
-  clone.setAttribute('viewBox', `0 0 ${width} ${height}`)
+  clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink')
+  // Pad so arrowheads at path ends are not clipped by the viewBox edge.
+  const pad = 8
+  clone.setAttribute('width', String(width + pad * 2))
+  clone.setAttribute('height', String(height + pad * 2))
+  clone.setAttribute('viewBox', `${-pad} ${-pad} ${width + pad * 2} ${height + pad * 2}`)
+  clone.setAttribute('overflow', 'visible')
 
   const background = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
-  background.setAttribute('x', '0')
-  background.setAttribute('y', '0')
-  background.setAttribute('width', String(width))
-  background.setAttribute('height', String(height))
+  background.setAttribute('x', String(-pad))
+  background.setAttribute('y', String(-pad))
+  background.setAttribute('width', String(width + pad * 2))
+  background.setAttribute('height', String(height + pad * 2))
   background.setAttribute('fill', '#FFFFFF')
-  clone.insertBefore(background, clone.firstChild)
+  const defs = clone.querySelector('defs')
+  if (defs?.parentNode === clone) {
+    clone.insertBefore(background, defs)
+  } else {
+    clone.insertBefore(background, clone.firstChild)
+  }
+
+  bakeCurrentColorForSvgExport(clone)
+  rewriteLocalUrlRefsForSvgExport(clone)
+  inlineArrowMarkersForSvgExport(svg, clone)
 
   const svgText = new XMLSerializer().serializeToString(clone)
   const svgBlob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' })
   const svgUrl = URL.createObjectURL(svgBlob)
-
   try {
-    const image = new Image()
-    image.decoding = 'async'
-    const imageLoaded = new Promise<void>((resolve, reject) => {
-      image.onload = () => resolve()
-      image.onerror = () => reject(new Error('Failed to rasterize the action flow SVG.'))
-    })
-    image.src = svgUrl
-    await imageLoaded
-
-    const maxCanvasDimension = 8192
-    const deviceScale = Math.max(1, Math.min(window.devicePixelRatio || 1, 2))
-    const scale = Math.min(deviceScale, maxCanvasDimension / width, maxCanvasDimension / height)
-    const canvas = document.createElement('canvas')
-    canvas.width = Math.max(1, Math.floor(width * scale))
-    canvas.height = Math.max(1, Math.floor(height * scale))
-    const ctx = canvas.getContext('2d')
-    if (!ctx) throw new Error('Canvas rendering is not available in this browser.')
-    ctx.fillStyle = '#FFFFFF'
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
-    ctx.drawImage(image, 0, 0, canvas.width, canvas.height)
-
-    const pngBlob = await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob((blob) => {
-        if (blob) resolve(blob)
-        else reject(new Error('Failed to encode the action flow PNG.'))
-      }, 'image/png')
-    })
-
-    const pngUrl = URL.createObjectURL(pngBlob)
-    try {
-      const link = document.createElement('a')
-      link.href = pngUrl
-      link.download = filename
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-    } finally {
-      URL.revokeObjectURL(pngUrl)
-    }
+    const link = document.createElement('a')
+    link.href = svgUrl
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
   } finally {
     URL.revokeObjectURL(svgUrl)
   }
@@ -155,14 +320,22 @@ interface SubtaskCardProps {
   actionTypePaletteId: ActionTypePaletteId
   /** Auto-generated root-cause analysis for failed traces; absent keeps the original end tooltip unchanged. */
   errorDiagnosis?: MemoryWorkerErrorDiagnosis
+  /** Fired once when this panel's trajectory becomes sealed (golden end node eligible). */
+  onPanelSealed?: (subtaskId: string) => void
   /** Shows the title-row comment affordance while collecting skill feedback. */
   feedbackMode?: boolean
   isFeedbackSelected?: boolean
   hasFeedbackComment?: boolean
   onToggleFeedbackSelection?: () => void
   onOpenFeedbackComment?: () => void
-  sessionId?: string
-  tooltipTranslate?: TooltipTranslateFn
+  /** Live permission ask from SSE — dialog is owned by MessagePanel; flow uses `permissionTraces` */
+  pendingPermission?: OcPendingPermissionRequest | null
+  showPendingPermission?: boolean
+  /** Permission asks for this card (pending + answered) — stay on the trajectory */
+  permissionTraces?: OcPermissionTraceEvent[]
+  /** Live SSE compaction marker — merged when this card should host it and messages lack a compaction part */
+  recentCompaction?: OcSessionCompactionEvent | null
+  showRecentCompaction?: boolean
 }
 
 type ColorByMode = 'tokens' | 'type'
@@ -236,20 +409,30 @@ export default function SubtaskCard({
   onColorByChange,
   actionTypePaletteId,
   errorDiagnosis,
+  onPanelSealed,
   feedbackMode = false,
   isFeedbackSelected = false,
   hasFeedbackComment = false,
   onToggleFeedbackSelection,
   onOpenFeedbackComment,
-  sessionId,
-  tooltipTranslate,
+  pendingPermission = null,
+  showPendingPermission = false,
+  permissionTraces = [],
+  recentCompaction = null,
+  showRecentCompaction = false,
 }: SubtaskCardProps) {
   const [nowTick, setNowTick] = useState(() => Date.now())
+  /** While a flow tip is pinned open, slow live redraw so content is easier to read. */
+  const [flowTooltipOpen, setFlowTooltipOpen] = useState(false)
   const [actionsDurationOn, setActionsDurationOn] = useState(false)
   const [filterMode, setFilterMode] = useState<FilterMode>('duration')
   const [snapshotBusy, setSnapshotBusy] = useState(false)
+  /** Single-line ellipsis by default; click expands to wrapped full title. */
+  const [titleExpanded, setTitleExpanded] = useState(false)
+  const [titleOverflows, setTitleOverflows] = useState(false)
   /** DOM anchor only — use outer wrapper for fork/scroll */
   const cardRef = useRef<HTMLDivElement | null>(null)
+  const titleRef = useRef<HTMLHeadingElement | null>(null)
   const [childBranchActions, setChildBranchActions] = useState<(MappedAction & { row: number })[]>([])
   /** Raw child-session messages merged into Changes (write/edit paths) */
   const [childBranchMessages, setChildBranchMessages] = useState<OcMessage[]>([])
@@ -262,6 +445,28 @@ export default function SubtaskCard({
       }),
     [subtask, messages, displayIndex, nowTick, childBranchMessages],
   )
+
+  useEffect(() => {
+    setTitleExpanded(false)
+  }, [m.title, subtask.subtask_id])
+
+  useEffect(() => {
+    const el = titleRef.current
+    if (!el) return
+
+    const measure = () => {
+      if (titleExpanded) {
+        setTitleOverflows(true)
+        return
+      }
+      setTitleOverflows(el.scrollWidth > el.clientWidth + 1)
+    }
+
+    measure()
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null
+    ro?.observe(el)
+    return () => ro?.disconnect()
+  }, [m.title, titleExpanded])
 
   /** Leading user indices + assistants in global timeline order */
   const segmentMessages = useMemo((): OcMessage[] => {
@@ -346,39 +551,59 @@ export default function SubtaskCard({
 
   useEffect(() => {
     if (!hasRunningTaskWithChild) return
+    /** Same cadence as the live duration tick so child rails stay in sync; slow while reading a tooltip. */
+    const intervalMs = flowTooltipOpen ? 5000 : 3200
     const id = window.setInterval(() => {
       void loadChildBranches()
-    }, 3200)
+    }, intervalMs)
     return () => window.clearInterval(id)
-  }, [hasRunningTaskWithChild, loadChildBranches])
-
-  useEffect(() => {
-    if (!sessionId || !tooltipTranslate) return
-    void prewarmTooltipTranslations(
-      sessionId,
-      collectTooltipTranslatableStrings([...segmentMessages, ...childBranchMessages]),
-    )
-  }, [sessionId, tooltipTranslate, segmentMessages, childBranchMessages])
+  }, [hasRunningTaskWithChild, loadChildBranches, flowTooltipOpen])
 
   const flowActions = useMemo(() => {
-    const merged = [...parentFlowActions, ...childBranchActions].sort((a, b) => a.sortTime - b.sortTime)
+    const sseExtra: (MappedAction & { row: number })[] = []
+    for (const t of permissionTraces) {
+      sseExtra.push(mappedActionFromPermissionTrace(t, nowTick))
+    }
+    // Fallback if traces lag behind a brand-new ask still only in pendingPermission
+    if (
+      showPendingPermission &&
+      pendingPermission &&
+      !permissionTraces.some((t) => t.id === pendingPermission.id)
+    ) {
+      sseExtra.push(
+        mappedActionFromPermissionTrace(
+          {
+            id: pendingPermission.id,
+            permission: pendingPermission.permission,
+            patterns: pendingPermission.patterns,
+            askedAt: pendingPermission.askedAt ?? nowTick,
+            status: 'pending',
+            tool: pendingPermission.tool,
+            sessionID: pendingPermission.sessionID,
+          },
+          nowTick,
+        ),
+      )
+    }
+    const hasCompactionPart = parentFlowActions.some((a) => a.actionType === 'Compaction')
+    if (showRecentCompaction && recentCompaction && !hasCompactionPart) {
+      sseExtra.push(mappedActionFromCompactionEvent(recentCompaction, nowTick))
+    }
+    const withSse = mergeActions(parentFlowActions, sseExtra)
+    const merged = [...withSse, ...childBranchActions].sort((a, b) => a.sortTime - b.sortTime)
     return applyParallelLayoutFromCalls(merged, parallelByCallId)
-  }, [parentFlowActions, childBranchActions, parallelByCallId])
+  }, [
+    parentFlowActions,
+    childBranchActions,
+    parallelByCallId,
+    permissionTraces,
+    showPendingPermission,
+    pendingPermission,
+    showRecentCompaction,
+    recentCompaction,
+    nowTick,
+  ])
 
-  const durationDomain = useMemo(() => {
-    const vals = flowActions
-      .map((a) => a.durationMs)
-      .filter((v): v is number => Number.isFinite(v) && v >= 0)
-    if (!vals.length) return null
-    return { min: Math.min(...vals), max: Math.max(...vals) }
-  }, [flowActions])
-  const tokenDomain = useMemo(() => {
-    const vals = flowActions
-      .map((a) => a.tokenEstimate)
-      .filter((v): v is number => Number.isFinite(v) && v >= 0)
-    if (!vals.length) return null
-    return { min: Math.min(...vals), max: Math.max(...vals) }
-  }, [flowActions])
   const [durationHighlightMinMs, setDurationHighlightMinMs] = useState(0)
   const [tokenHighlightMin, setTokenHighlightMin] = useState(0)
   const [filterTouched, setFilterTouched] = useState(false)
@@ -393,6 +618,133 @@ export default function SubtaskCard({
     setDurationHighlightMinMs(0)
     setTokenHighlightMin(0)
   }, [subtaskSig])
+
+  /** Matches `mergeMessagesForActionTooltipLookup`: parent segment + fetched child rows */
+  const tooltipLookupMessages = useMemo(
+    () => mergeMessagesForActionTooltipLookup(segmentMessages, childBranchMessages),
+    [segmentMessages, childBranchMessages],
+  )
+
+  const handleDownloadSnapshot = useCallback(() => {
+    const svg = cardRef.current?.querySelector<SVGSVGElement>('svg[data-action-flow-root="1"]')
+    if (!svg) {
+      window.alert('Snapshot failed: action flow SVG is not ready yet.')
+      return
+    }
+
+    const safeTitle = sanitizeSnapshotFilePart(m.title) || `panel-${displayIndex + 1}`
+    setSnapshotBusy(true)
+    try {
+      downloadSvg(svg, `vibetrace-${displayIndex + 1}-${safeTitle}.svg`)
+    } catch (err) {
+      window.alert(`Snapshot failed: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setSnapshotBusy(false)
+    }
+  }, [displayIndex, m.title])
+
+  /**
+   * Absolute subtask index in `assistantSubtasks` (not the filtered visible-row `displayIndex` / `si`).
+   * Fork snapshots store `forkOriginDisplayIndex` as this source index; Rule C must compare against it.
+   */
+  const forkSourceIndex = cardIndex ?? displayIndex
+
+  /**
+   * After fork: one SVG merges shared pre-fork prefix + gray ghost after the anchor + the new branch.
+   *
+   * Fork-pre actions belong to the new OpenCode session context (messages are copied on fork) and already
+   * live in `flowActions`. Pre-fork plus the live branch therefore reuse the **same** action objects so
+   * treemap, tooltip, and selection state stay consistent. Only post-anchor “hypothetical old branch” steps
+   * come from the snapshot ghost stream (absent in the forked session timeline).
+   *
+   * Routing rules (applied in order):
+   *
+   * A) Anchor found in THIS subtask AND post-anchor actions exist here:
+   *    → Standard merged view. Handles the case where fork prompt reply lands in the same subtask.
+   *
+   * B) Anchor found in THIS subtask BUT no post-anchor actions exist:
+   *    → New branch is in the NEXT subtask (forkSourceIndex + 1). Render this card normally so the
+   *      origin copy is not shown twice; the full comparison appears in the next card via Rule C.
+   *
+   * C) Anchor NOT found AND forkSourceIndex === forkOriginDisplayIndex + 1:
+   *    → First post-fork subtask (fork prompt + AI reply). Show full comparison using snapshot as
+   *      historical context: snapshot history → ghost → current flowActions as new branch.
+   *
+   * All other subtasks return null.
+   */
+  const forkMergedFlow = useMemo(() => {
+    if (!forkPanelSnapshotBundle || forkPanelSnapshotBundle.version !== 2) return null
+    const b = forkPanelSnapshotBundle
+    const anchorMessageId = b.forkAnchorMessageId
+    const anchorPartId = b.forkAnchorPartId
+    const matchAnchor = (a: MappedAction & { row: number }) =>
+      a.messageID === anchorMessageId && (anchorPartId ? a.partId === anchorPartId : true)
+
+    const oldActions = b.snapshot.flowActions
+    const oldAnchorIdx = oldActions.findIndex(matchAnchor)
+    if (oldAnchorIdx < 0) return null
+
+    const currentAnchorIdx = flowActions.findIndex(matchAnchor)
+
+    let preForkAndAnchor: (MappedAction & { row: number })[]
+    let postAnchorCurrent: (MappedAction & { row: number })[]
+
+    if (currentAnchorIdx >= 0) {
+      preForkAndAnchor = flowActions.slice(0, currentAnchorIdx + 1)
+      postAnchorCurrent = flowActions.slice(currentAnchorIdx + 1)
+      /**
+       * Rule B: anchor present but no post-fork actions in this card.
+       * The fork comparison will be shown in the next subtask card (Rule C).
+       */
+      if (postAnchorCurrent.length === 0) return null
+    } else {
+      /**
+       * Rule C: first post-fork subtask — show full comparison with snapshot as historical prefix.
+       * Compare absolute source indices (cardIndex), not filtered visible-row indices (displayIndex/si).
+       */
+      if (forkSourceIndex !== b.forkOriginDisplayIndex + 1) return null
+      preForkAndAnchor = oldActions.slice(0, oldAnchorIdx + 1)
+      postAnchorCurrent = flowActions
+    }
+
+    const anchorActionKey = actionKey(preForkAndAnchor[preForkAndAnchor.length - 1]!)
+    const sessionActions = [...preForkAndAnchor, ...postAnchorCurrent].sort(
+      (x, y) => x.sortTime - y.sortTime,
+    )
+
+    const ghostSuffix = oldActions
+      .slice(oldAnchorIdx + 1)
+      .map((a) => ({ ...a, forkGhost: true }))
+
+    const newBranch = postAnchorCurrent.map((a) => ({ ...a, forkCompareRow: 2 as const }))
+
+    const merged = [...preForkAndAnchor, ...ghostSuffix, ...newBranch].sort(
+      (x, y) => x.sortTime - y.sortTime,
+    )
+    const mergedTooltips = [...b.snapshot.tooltipMessages, ...tooltipLookupMessages]
+    return { merged, mergedTooltips, anchorActionKey, sessionActions }
+  }, [forkPanelSnapshotBundle, forkSourceIndex, flowActions, tooltipLookupMessages])
+
+  /**
+   * Filter domains cover everything drawn in the SVG (shared prefix + ghosts + new branch).
+   * Bottom strip metrics use the live session path (prefix + new branch), not abandoned ghosts.
+   */
+  const filterBasisActions = forkMergedFlow?.merged ?? flowActions
+
+  const durationDomain = useMemo(() => {
+    const vals = filterBasisActions
+      .map((a) => a.durationMs)
+      .filter((v): v is number => Number.isFinite(v) && v >= 0)
+    if (!vals.length) return null
+    return { min: Math.min(...vals), max: Math.max(...vals) }
+  }, [filterBasisActions])
+  const tokenDomain = useMemo(() => {
+    const vals = filterBasisActions
+      .map((a) => a.tokenEstimate)
+      .filter((v): v is number => Number.isFinite(v) && v >= 0)
+    if (!vals.length) return null
+    return { min: Math.min(...vals), max: Math.max(...vals) }
+  }, [filterBasisActions])
   useEffect(() => {
     if (!durationDomain) {
       setDurationHighlightMinMs(0)
@@ -430,16 +782,16 @@ export default function SubtaskCard({
   }, [activeFilterDomain, filterTouched, activeFilterValue])
   const matchedActionCount = useMemo(() => {
     if (filterMode === 'duration') {
-      if (!durationDomain) return flowActions.length
-      return flowActions.filter(
+      if (!durationDomain) return filterBasisActions.length
+      return filterBasisActions.filter(
         (a) => Number.isFinite(a.durationMs) && a.durationMs >= effectiveFilterMin
       ).length
     }
-    if (!tokenDomain) return flowActions.length
-    return flowActions.filter(
+    if (!tokenDomain) return filterBasisActions.length
+    return filterBasisActions.filter(
       (a) => Number.isFinite(a.tokenEstimate) && a.tokenEstimate >= effectiveFilterMin
     ).length
-  }, [filterMode, flowActions, durationDomain, tokenDomain, effectiveFilterMin])
+  }, [filterMode, filterBasisActions, durationDomain, tokenDomain, effectiveFilterMin])
   const activeFilterMaxLabel = useMemo(() => {
     if (!activeFilterDomain) return ''
     if (filterMode === 'duration') return formatDurationMs(activeFilterDomain.max)
@@ -461,104 +813,24 @@ export default function SubtaskCard({
       ? tokenHighlightMin
       : null
 
-  /** Matches `mergeMessagesForActionTooltipLookup`: parent segment + fetched child rows */
-  const tooltipLookupMessages = useMemo(
-    () => mergeMessagesForActionTooltipLookup(segmentMessages, childBranchMessages),
-    [segmentMessages, childBranchMessages],
-  )
-
-  const handleDownloadSnapshot = useCallback(async () => {
-    const svg = cardRef.current?.querySelector<SVGSVGElement>('svg[data-action-flow-root="1"]')
-    if (!svg) {
-      window.alert('Snapshot failed: action flow SVG is not ready yet.')
-      return
-    }
-
-    const safeTitle = sanitizeSnapshotFilePart(m.title) || `panel-${displayIndex + 1}`
-    setSnapshotBusy(true)
-    try {
-      await downloadSvgAsPng(svg, `vibetrace-${displayIndex + 1}-${safeTitle}.png`)
-    } catch (err) {
-      window.alert(`Snapshot failed: ${err instanceof Error ? err.message : String(err)}`)
-    } finally {
-      setSnapshotBusy(false)
-    }
-  }, [displayIndex, m.title])
-
   /**
-   * After fork: one SVG merges shared pre-fork prefix + gray ghost after the anchor + the new branch.
-   *
-   * Fork-pre actions belong to the new OpenCode session context (messages are copied on fork) and already
-   * live in `flowActions`. Pre-fork plus the live branch therefore reuse the **same** action objects so
-   * treemap, tooltip, and selection state stay consistent. Only post-anchor “hypothetical old branch” steps
-   * come from the snapshot ghost stream (absent in the forked session timeline).
-   *
-   * Routing rules (applied in order):
-   *
-   * A) Anchor found in THIS subtask AND post-anchor actions exist here:
-   *    → Standard merged view. Handles the case where fork prompt reply lands in the same subtask.
-   *
-   * B) Anchor found in THIS subtask BUT no post-anchor actions exist:
-   *    → New branch is in the NEXT subtask (displayIndex + 1). Render this card normally so the
-   *      origin copy is not shown twice; the full comparison appears in the next card via Rule C.
-   *
-   * C) Anchor NOT found AND displayIndex === forkOriginDisplayIndex + 1:
-   *    → First post-fork subtask (fork prompt + AI reply). Show full comparison using snapshot as
-   *      historical context: snapshot history → ghost → current flowActions as new branch.
-   *
-   * All other subtasks return null.
+   * Rule C cards only contain the post-fork turn; top up strip stats with the snapshot prefix
+   * (shared history before the anchor). Rule A already has the prefix in live `m`.
    */
-  const forkMergedFlow = useMemo(() => {
-    if (!forkPanelSnapshotBundle || forkPanelSnapshotBundle.version !== 2) return null
-    const b = forkPanelSnapshotBundle
-    const anchorMessageId = b.forkAnchorMessageId
-    const anchorPartId = b.forkAnchorPartId
-    const matchAnchor = (a: MappedAction & { row: number }) =>
-      a.messageID === anchorMessageId && (anchorPartId ? a.partId === anchorPartId : true)
-
-    const oldActions = b.snapshot.flowActions
-    const oldAnchorIdx = oldActions.findIndex(matchAnchor)
-    if (oldAnchorIdx < 0) return null
-
-    const currentAnchorIdx = flowActions.findIndex(matchAnchor)
-
-    let preForkAndAnchor: (MappedAction & { row: number })[]
-    let postAnchorCurrent: (MappedAction & { row: number })[]
-
-    if (currentAnchorIdx >= 0) {
-      preForkAndAnchor = flowActions.slice(0, currentAnchorIdx + 1)
-      postAnchorCurrent = flowActions.slice(currentAnchorIdx + 1)
-      /**
-       * Rule B: anchor present but no post-fork actions in this card.
-       * The fork comparison will be shown in the next subtask card (Rule C).
-       */
-      if (postAnchorCurrent.length === 0) return null
-    } else {
-      /**
-       * Rule C: first post-fork subtask — show full comparison with snapshot as historical prefix.
-       */
-      if (displayIndex !== b.forkOriginDisplayIndex + 1) return null
-      preForkAndAnchor = oldActions.slice(0, oldAnchorIdx + 1)
-      postAnchorCurrent = flowActions
-    }
-
-    const anchorActionKey = actionKey(preForkAndAnchor[preForkAndAnchor.length - 1]!)
-    const sessionActions = [...preForkAndAnchor, ...postAnchorCurrent].sort(
-      (x, y) => x.sortTime - y.sortTime,
+  const displayMetrics = useMemo(() => {
+    if (!forkMergedFlow || !forkPanelSnapshotBundle) return m
+    const anchorMessageId = forkPanelSnapshotBundle.forkAnchorMessageId
+    const anchorPartId = forkPanelSnapshotBundle.forkAnchorPartId
+    const anchorInCurrent = flowActions.some(
+      (a) =>
+        a.messageID === anchorMessageId && (anchorPartId ? a.partId === anchorPartId : true),
     )
+    if (anchorInCurrent) return m
+    const prefix = buildForkPrefixMetricsFromSnapshot(forkPanelSnapshotBundle, nowTick)
+    if (!prefix) return m
+    return mergeSubtaskCardMetrics(prefix, m)
+  }, [forkMergedFlow, forkPanelSnapshotBundle, flowActions, m, nowTick])
 
-    const ghostSuffix = oldActions
-      .slice(oldAnchorIdx + 1)
-      .map((a) => ({ ...a, forkGhost: true }))
-
-    const newBranch = postAnchorCurrent.map((a) => ({ ...a, forkCompareRow: 2 as const }))
-
-    const merged = [...preForkAndAnchor, ...ghostSuffix, ...newBranch].sort(
-      (x, y) => x.sortTime - y.sortTime,
-    )
-    const mergedTooltips = [...b.snapshot.tooltipMessages, ...tooltipLookupMessages]
-    return { merged, mergedTooltips, anchorActionKey, sessionActions }
-  }, [forkPanelSnapshotBundle, displayIndex, flowActions, tooltipLookupMessages])
   const hasActiveRunningAction = useMemo(
     () => flowActions.some((a) => a.status === 'running' || a.status === 'pending'),
     [flowActions],
@@ -571,38 +843,77 @@ export default function SubtaskCard({
     [flowActions],
   )
 
+  const FLOW_TICK_MS = 2000
+  const FLOW_TICK_WHILE_TOOLTIP_MS = 5000
+
   useEffect(() => {
     if (!hasActiveRunningAction) return
     /**
-     * 2s heartbeat: bumps `parentFlowActions`/`flowActions` references so ActionFlowVisualization’s D3 effect
-     * rebuilds (~one visible flash per tick). 1 Hz felt too frantic during streamed generation — 2s balances
-     * “live duration” readability with calmer visuals.
+     * Heartbeat bumps `parentFlowActions`/`flowActions` so ActionFlowVisualization’s D3 effect rebuilds.
+     * Default 2s; while a tooltip is open, 5s so the user can finish reading before the next wipe.
      */
-    const id = window.setInterval(() => setNowTick(Date.now()), 2000)
+    const intervalMs = flowTooltipOpen ? FLOW_TICK_WHILE_TOOLTIP_MS : FLOW_TICK_MS
+    const id = window.setInterval(() => setNowTick(Date.now()), intervalMs)
     return () => window.clearInterval(id)
-  }, [hasActiveRunningAction])
+  }, [hasActiveRunningAction, flowTooltipOpen])
 
-  const durationLabel = formatDurationMs(m.durationMs)
-  const changesLabel = String(m.mutatedFileCount)
-  /** Hide the golden end circle while tools are active; show when this panel’s trace finishes. */
-  const showFlowEndNode = !hasActiveRunningAction && flowActions.length > 0
+  const handleFlowTooltipOpenChange = useCallback((open: boolean) => {
+    setFlowTooltipOpen((prev) => {
+      if (prev === open) return prev
+      return open
+    })
+    if (open) experimentTelemetry.enterPanelFocus('tooltip')
+    else experimentTelemetry.leavePanelFocus('tooltip', 'trajectory')
+  }, [])
+
+  const wasFlowTooltipOpenRef = useRef(false)
+  useEffect(() => {
+    const wasOpen = wasFlowTooltipOpenRef.current
+    wasFlowTooltipOpenRef.current = flowTooltipOpen
+    if (wasOpen && !flowTooltipOpen && hasActiveRunningAction) {
+      // Tooltip / hover ended: catch up once, then the 2s interval resumes.
+      setNowTick(Date.now())
+    }
+  }, [flowTooltipOpen, hasActiveRunningAction])
+
+  const durationLabel = formatDurationMs(displayMetrics.durationMs)
+  const changesLabel = String(displayMetrics.mutatedFileCount)
+  /**
+   * Golden end circle only after this panel’s trace is confirmed finished — not as soon as the first
+   * Think/Response appears (those parts are always mapped as `completed` while the turn may still be live).
+   * Finished when: no running/pending tools, and either the last assistant turn stopped (`finish: stop` /
+   * step-finish stop) or a later message has already sealed this panel.
+   */
+  const showFlowEndNode = useMemo(() => {
+    if (flowActions.length === 0 || hasActiveRunningAction) return false
+    return isSubtaskPanelSealed(subtask, messages)
+  }, [flowActions.length, hasActiveRunningAction, messages, subtask])
+
+  /** Once notified for this subtaskId, never re-fire — even if the end node flickers. */
+  const panelSealedNotifiedForIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!showFlowEndNode) return
+    if (panelSealedNotifiedForIdRef.current === subtask.subtask_id) return
+    panelSealedNotifiedForIdRef.current = subtask.subtask_id
+    onPanelSealed?.(subtask.subtask_id)
+  }, [showFlowEndNode, onPanelSealed, subtask.subtask_id])
 
   /**
    * Stabilize `flowEndSummary` identity — inline object literals each render fooled ActionFlowVisualization’s first
    * `useLayoutEffect` into `selectAll('*').remove()`, wiping the SVG whenever clicks/`nowTick` fired.
    */
   const flowEndSummary = useMemo(
-    () => buildFlowEndSummary(m, errorDiagnosis),
+    () => buildFlowEndSummary(displayMetrics, errorDiagnosis),
     [
-      m.readFilesCount,
-      m.readFilePaths,
-      m.globMatchFileCount,
-      m.webSearchCallCount,
-      m.webSearchQueries,
-      m.mutatedFileCount,
-      m.mutatedFilePaths,
+      displayMetrics.readFilesCount,
+      displayMetrics.readFilePaths,
+      displayMetrics.globMatchFileCount,
+      displayMetrics.webSearchCallCount,
+      displayMetrics.webSearchQueries,
+      displayMetrics.mutatedFileCount,
+      displayMetrics.mutatedFilePaths,
       errorDiagnosis,
-      m,
+      displayMetrics,
     ],
   )
 
@@ -615,10 +926,11 @@ export default function SubtaskCard({
     return (act: MappedAction & { row: number }) =>
       onForkFromAction(act, {
         subtaskId: subtask.subtask_id,
-        subtaskDisplayIndex: displayIndex,
+        /** Must be absolute sourceIndex — snapshot + App resolve tabs by this, not filtered `si`. */
+        subtaskDisplayIndex: forkSourceIndex,
         assistantMessageIndices: subtask.assistantMessageIndices,
       })
-  }, [onForkFromAction, subtask.subtask_id, subtask.assistantMessageIndices, displayIndex])
+  }, [onForkFromAction, subtask.subtask_id, subtask.assistantMessageIndices, forkSourceIndex])
 
   const bodyContent = (
     <>
@@ -668,6 +980,23 @@ export default function SubtaskCard({
             </label>
           ) : null}
           <h3
+            ref={titleRef}
+            title={titleOverflows && !titleExpanded ? 'Click to show full title' : undefined}
+            onClick={(e) => {
+              if (!titleOverflows && !titleExpanded) return
+              e.stopPropagation()
+              setTitleExpanded((v) => !v)
+            }}
+            onKeyDown={(e) => {
+              if (!titleOverflows && !titleExpanded) return
+              if (e.key !== 'Enter' && e.key !== ' ') return
+              e.preventDefault()
+              e.stopPropagation()
+              setTitleExpanded((v) => !v)
+            }}
+            role={titleOverflows || titleExpanded ? 'button' : undefined}
+            tabIndex={titleOverflows || titleExpanded ? 0 : undefined}
+            aria-expanded={titleOverflows || titleExpanded ? titleExpanded : undefined}
             style={{
               margin: 0,
               fontWeight: 600,
@@ -675,10 +1004,12 @@ export default function SubtaskCard({
               lineHeight: '18px',
               color: '#2B2B2B',
               minWidth: 0,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
+              overflow: titleExpanded ? 'visible' : 'hidden',
+              textOverflow: titleExpanded ? 'clip' : 'ellipsis',
+              whiteSpace: titleExpanded ? 'normal' : 'nowrap',
+              wordBreak: titleExpanded ? 'break-word' : undefined,
               flex: 1,
+              cursor: titleOverflows || titleExpanded ? 'pointer' : 'default',
             }}
           >
             {m.title}
@@ -1070,7 +1401,8 @@ export default function SubtaskCard({
               flowEndSummary={flowEndSummary}
               ghostFlowEndSummary={ghostFlowEndSummary}
               viewportMaxHeight={FLOW_VIEWPORT_MAX_HEIGHT}
-              tooltipTranslate={tooltipTranslate}
+              telemetrySubtaskId={subtask.subtask_id}
+              onTooltipOpenChange={handleFlowTooltipOpenChange}
             />
           )
         })()}
@@ -1087,11 +1419,11 @@ export default function SubtaskCard({
           flexShrink: 0,
         }}
       >
-        <MetricBox label="LLM calls" value={String(m.llmCallCount)} />
+        <MetricBox label="LLM calls" value={String(displayMetrics.llmCallCount)} />
         <MetricBox label="Changes" value={changesLabel} />
         <MetricBox label="Time" value={durationLabel} alert={hasLongRunningAction} />
-        <MetricBox label="Total Tokens" value={String(m.tokensSegmentSum)} />
-        <MetricBox label="Cost" value={formatSubtaskCostDisplay(m)} />
+        <MetricBox label="Total Tokens" value={String(displayMetrics.tokensSegmentSum)} />
+        <MetricBox label="Cost" value={formatSubtaskCostDisplay(displayMetrics)} />
       </div>
     </>
   )

@@ -24,7 +24,7 @@ interface MessageInputProps {
   composerModelOptions?: OcComposerModelOption[]
   composerModelsLoading?: boolean
   composerModelsError?: string | null
-  /** Shown when composer selection is empty — mirrors `VITE_OPENCODE_DEFAULT_MODEL`. */
+  /** Shown when composer selection is empty — VibeTrace default model ref. */
   envBootstrapModel?: string | null
 }
 
@@ -47,6 +47,7 @@ export default function MessageInput({
   composerModelOptions = [],
   composerModelsLoading = false,
   composerModelsError = null,
+  envBootstrapModel = null,
 }: MessageInputProps) {
   const [text, setText] = useState('')
   const [files, setFiles] = useState<File[]>([])
@@ -54,6 +55,8 @@ export default function MessageInput({
   const [attachError, setAttachError] = useState<string | null>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  /** Tracks IME composition; Mac CJK IMEs sometimes clear isComposing before keydown. */
+  const isComposingRef = useRef(false)
 
   useLayoutEffect(() => {
     const el = taRef.current
@@ -65,7 +68,10 @@ export default function MessageInput({
 
   const canSend =
     (text.trim().length > 0 || files.length > 0) && !sending && !disabled
-  const canAbort = Boolean(isRunning && onAbort && !aborting && !disabled)
+  // Abort must NOT depend on `disabled`: composer is disabled during permission/question
+  // prompts, but those are exactly when the user often needs to stop the agent.
+  const showAbort = Boolean(isRunning && onAbort)
+  const canAbort = Boolean(showAbort && !aborting)
 
   const groupedModelOptions = useMemo(() => {
     const groups = new Map<string, { providerName: string; options: OcComposerModelOption[] }>()
@@ -114,11 +120,13 @@ export default function MessageInput({
     }
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      void handleSend()
-    }
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key !== 'Enter' || e.shiftKey) return
+    // Skip IME confirm/select Enter (common on Mac Chinese/Japanese IMEs).
+    // keyCode 229 = legacy "IME processing" signal still used by some browsers.
+    if (e.nativeEvent.isComposing || isComposingRef.current || e.keyCode === 229) return
+    e.preventDefault()
+    void handleSend()
   }
 
   const onPickFiles = () => {
@@ -152,6 +160,12 @@ export default function MessageInput({
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
+          onCompositionStart={() => {
+            isComposingRef.current = true
+          }}
+          onCompositionEnd={() => {
+            isComposingRef.current = false
+          }}
           placeholder="Ask something…"
           disabled={disabled || sending}
           rows={MIN_ROWS}
@@ -284,7 +298,13 @@ export default function MessageInput({
                 color: '#333',
               }}
             >
-              <option value="">{composerModelsLoading ? 'Loading models…' : 'Default model'}</option>
+              <option value="">
+                {composerModelsLoading
+                  ? 'Loading models…'
+                  : envBootstrapModel
+                    ? `Default (${envBootstrapModel})`
+                    : 'Default model'}
+              </option>
               {groupedModelOptions.map((group) => (
                 <optgroup key={group.providerName} label={group.providerName}>
                   {group.options.map((o) => (
@@ -299,8 +319,9 @@ export default function MessageInput({
 
           <button
             type="button"
-            onClick={() => void (canAbort ? handleAbort() : handleSend())}
-            disabled={canAbort ? false : !canSend}
+            onClick={() => void (showAbort ? handleAbort() : handleSend())}
+            disabled={showAbort ? !canAbort : !canSend}
+            title={showAbort ? (aborting ? 'Stopping…' : 'Stop') : undefined}
             style={{
               width: 32,
               height: 32,
@@ -308,14 +329,14 @@ export default function MessageInput({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              background: canAbort ? '#FFECEC' : (canSend ? '#8B5CF6' : '#F5F5F5'),
+              background: showAbort ? '#FFECEC' : (canSend ? '#8B5CF6' : '#F5F5F5'),
               border: 'none',
               borderRadius: 6,
-              cursor: canAbort || canSend ? 'pointer' : 'not-allowed',
-              opacity: sending ? 0.7 : 1,
+              cursor: (showAbort ? canAbort : canSend) ? 'pointer' : 'not-allowed',
+              opacity: sending || aborting ? 0.7 : 1,
             }}
           >
-            {canAbort ? (
+            {showAbort ? (
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D94A4A" strokeWidth="2">
                 <rect x="6" y="6" width="12" height="12" rx="1.5" />
               </svg>

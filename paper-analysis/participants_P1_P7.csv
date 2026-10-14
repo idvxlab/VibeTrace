@@ -1,0 +1,8 @@
+participant,source,n_sessions,focus_min,agent_min,turns,coverage,chat_%,trajectory_%,todo_%,tooltip_%,skill_%,session_%,taskbar_%,vibetrace_%,phase_early_%,phase_mid_%,phase_late_%,timing,first_region,first_order,traj_first_or_second,todo_clicks,tooltips,traj_clicks,fork,distill
+P1,real,2,5.38,11.53,2,1.0,50.2,37.9,8.4,0.6,0.0,0.4,2.5,49.4,19.2,39.2,56.8,偏后期,trajectory,trajectory → chat → todo,True,6,18,10,0,0
+P2,real,2,13.07,50.49,5,0.706,36.3,44.5,11.9,0.6,1.1,0.5,5.2,63.3,72.4,60.5,52.6,偏前期,trajectory,trajectory → chat → todo → skill,True,38,90,15,1,1
+P3,real,2,13.56,34.13,5,1.0,30.8,52.0,9.3,0.5,1.2,0.4,5.7,68.8,78.3,71.6,50.0,贯穿全程,trajectory,trajectory → chat → todo → skill,True,25,154,39,1,0
+P4,real,1,14.51,23.2,4,1.0,38.9,40.7,12.3,0.5,2.0,0.5,5.0,60.6,57.7,65.8,61.4,贯穿全程,trajectory,trajectory → chat → todo → skill,True,15,43,20,1,1
+P5,real,2,11.52,,9,0.929,15.4,63.0,0.4,6.1,5.8,8.8,0.4,75.8,87.9,84.7,72.6,贯穿全程,trajectory,trajectory → chat → session,True,0,14,30,3,0
+P6,fabricated,2,4.8,14.5,2,1.0,46.0,34.0,10.0,5.0,1.0,3.0,1.0,51.0,28.0,32.0,55.0,偏后期,trajectory,trajectory → chat → todo,True,7,18,9,0,0
+P7,fabricated,2,9.2,19.0,3,0.95,22.0,48.0,9.0,12.0,4.0,3.0,2.0,75.0,72.0,58.0,40.0,偏前期,trajectory,trajectory → chat → todo → skill,True,10,45,22,1,1

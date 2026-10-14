@@ -1,0 +1,52 @@
+# ---- Secrets / credentials (NEVER commit) ----
+.relay_key
+*.key
+*.pem
+.env
+.env.*
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+build/
+dist/
+.eggs/
+
+# ---- Virtual envs ----
+.venv/
+venv/
+env/
+ENV/
+
+# ---- Caches / tooling ----
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+.coverage
+htmlcov/
+
+# ---- Datasets (large, fetched separately; keep the committed split file) ----
+data/*
+!data/swe-bench-verified/
+data/swe-bench-verified/*
+!data/swe-bench-verified/split_subsystem_v1.json
+
+# ---- Cloned benchmark repos (large, fetched separately) ----
+repos/
+
+# ---- Experiment outputs ----
+results*/
+logs/
+
+# ---- Local IDE bridge state ----
+.sii/
+
+# ---- Editor / OS ----
+.vscode/
+.idea/
+*.swp
+.DS_Store
