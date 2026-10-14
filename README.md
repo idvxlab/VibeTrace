@@ -105,7 +105,7 @@ From the project root:
 npm run worker:py
 ```
 
-Listens on **`http://127.0.0.1:8714`** by default. See [`docs/memory-worker.md`](./docs/memory-worker.md).
+Listens on **`http://127.0.0.1:8714`** by default.
 
 **Terminal 3 — Vite UI**
 
@@ -127,9 +127,9 @@ Open **`http://127.0.0.1:5173`** in your browser.
 | Variable | When to set |
 | --- | --- |
 | `SKILL_WRITE_ROOT` | Where analyzed skills are written |
-| `VITE_OPENCODE_DEFAULT_MODEL` | Default model when sending from VibeTrace (`provider/model`) |
 | `VITE_TRACE_SESSION_TURN_LIMIT` | More history turns per ingest (default `5`) |
-| `PYTHON` | Non-default Python executable name |
+
+The model is chosen in the composer dropdown. If nothing is selected, VibeTrace sends `opencode/big-pickle`. You do not set a model in `.env.local`.
 
 ---
 

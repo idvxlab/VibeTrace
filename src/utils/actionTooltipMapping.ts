@@ -1,5 +1,5 @@
 /**
- * Action-flow tooltip：英文标签，值保持原文（含中文）。
+ * Action-flow tooltip: English labels; values stay as stored (including non-English text).
  */
 
 import type { MappedAction, OcMessage, OcMessagePart, ToolPart } from '../types/opencode'

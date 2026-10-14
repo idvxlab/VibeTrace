@@ -42,3 +42,6 @@ memory_worker/logs/
 # Local-only overrides (not committed)
 src/caseStudy/overrides/registry.local.ts
 src/caseStudy/overrides/ses_*.ts
+
+# User-study recordings written into a workspace (do not commit)
+vibetrace-behavior/

@@ -34,7 +34,6 @@ interface Props {
   sessionId?: string
   errorDiagnosisBySubtaskId?: Record<string, MemoryWorkerErrorDiagnosis>
   onPanelSealed?: (subtaskId: string) => void
-  onPanelBecameVisible?: (subtaskId: string) => void
   pendingPermission?: OcPendingPermissionRequest | null
   permissionTraces?: OcPermissionTraceEvent[]
   recentCompaction?: OcSessionCompactionEvent | null
@@ -64,7 +63,6 @@ export default function FullscreenSubtaskPanel({
   sessionId,
   errorDiagnosisBySubtaskId,
   onPanelSealed,
-  onPanelBecameVisible,
   pendingPermission = null,
   permissionTraces = [],
   recentCompaction = null,
@@ -211,7 +209,6 @@ export default function FullscreenSubtaskPanel({
             sessionId={sessionId}
             errorDiagnosisBySubtaskId={errorDiagnosisBySubtaskId}
             onPanelSealed={onPanelSealed}
-            onPanelBecameVisible={onPanelBecameVisible}
             pendingPermission={pendingPermission}
             permissionTraces={permissionTraces}
             recentCompaction={recentCompaction}

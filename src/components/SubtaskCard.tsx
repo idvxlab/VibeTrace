@@ -39,7 +39,6 @@ import {
   type ActionTypePaletteId,
 } from '../styles/actionTypePalettes'
 import { getMessages } from '../services/opencodeApi'
-import { experimentTelemetry } from '../experiment/telemetry'
 import { actionKey } from '../utils/actionKey'
 import type { MemoryWorkerErrorDiagnosis } from '../services/memoryWorkerApi'
 
@@ -862,8 +861,6 @@ export default function SubtaskCard({
       if (prev === open) return prev
       return open
     })
-    if (open) experimentTelemetry.enterPanelFocus('tooltip')
-    else experimentTelemetry.leavePanelFocus('tooltip', 'trajectory')
   }, [])
 
   const wasFlowTooltipOpenRef = useRef(false)
@@ -1401,7 +1398,6 @@ export default function SubtaskCard({
               flowEndSummary={flowEndSummary}
               ghostFlowEndSummary={ghostFlowEndSummary}
               viewportMaxHeight={FLOW_VIEWPORT_MAX_HEIGHT}
-              telemetrySubtaskId={subtask.subtask_id}
               onTooltipOpenChange={handleFlowTooltipOpenChange}
             />
           )

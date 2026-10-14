@@ -12,7 +12,6 @@ import { messagesHaveOpenQuestionWithInput } from '../utils/questionPart'
 import { collectStaleToolCallIDs } from '../utils/actionMapping'
 import { messageHasAgentStepFinishStop } from '../utils/subtaskGrouping'
 import ScrollNodeRail, { type ScrollNodeMarker } from './ScrollNodeRail'
-import { experimentTelemetry } from '../experiment/telemetry'
 
 interface MessagePanelProps {
   messages: OcMessage[]
@@ -40,12 +39,6 @@ interface MessagePanelProps {
   /** Incremented on subtask selection to auto-expand matching todo sections */
   todoPanelRevealGeneration?: number
   onTodoClick?: (todo: OcTodo) => void
-  /** Experiment: any click inside the Todo panel. */
-  onTodoPanelClick?: (detail: {
-    target: 'header' | 'section' | 'todo'
-    section?: 'open' | 'done' | 'history'
-    todoId?: string
-  }) => void
   /** PATCH session title via OpenCode */
   onSessionTitleCommit?: (title: string) => Promise<void>
   /** OpenCode question channel requests (SSE `question.asked`) */
@@ -98,7 +91,6 @@ export default function MessagePanel({
   highlightTodoIds,
   todoPanelRevealGeneration,
   onTodoClick,
-  onTodoPanelClick,
   onSessionTitleCommit,
   pendingQuestion,
   onQuestionReply,
@@ -378,7 +370,6 @@ export default function MessagePanel({
           ref={messageListScrollRef}
           onScroll={() => {
             updateStickToBottomFromScroll()
-            experimentTelemetry.onScroll('chat', sessionId || undefined)
           }}
           onWheel={handleMessageListWheel}
           style={{
@@ -484,7 +475,6 @@ export default function MessagePanel({
             highlightTodoIds={highlightTodoIds}
             todoPanelRevealGeneration={todoPanelRevealGeneration}
             onTodoClick={onTodoClick}
-            onPanelClick={onTodoPanelClick}
             listScrollRef={todoPanelScrollRef}
           />
         </div>

@@ -29,13 +29,6 @@ export const STORAGE_KEYS = {
   panelAnalysis: `${APP_STORAGE_NAMESPACE}.panelAnalysis.v1`,
   /** Prefix for `${prefix}${sessionId}` fork-panel snapshot entries */
   forkPanelPrefix: `${APP_STORAGE_NAMESPACE}:fork-panel:`,
-  /**
-   * Active user-study experiment drafts, keyed by workspace directory
-   * (survives refresh until End / tab close). Schema v2 in telemetry.ts.
-   */
-  experimentActive: `${APP_STORAGE_NAMESPACE}.experiment.active.v1`,
-  /** Reports that failed to flush on tab close — retried on next load. */
-  experimentPendingReports: `${APP_STORAGE_NAMESPACE}.experiment.pendingReports.v1`,
 } as const
 
 /** Composer `<select>` DOM id — must match `<label htmlFor>`; unrelated to persistence key spelling */

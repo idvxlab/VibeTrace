@@ -33,16 +33,6 @@ export const ACTION_CATEGORY_LABELS: Record<ActionCategory, string> = {
   contextManagement: 'Context management',
 }
 
-export const ACTION_CATEGORY_LABELS_ZH: Record<ActionCategory, string> = {
-  planning: '规划',
-  informationAcquisition: '信息获取',
-  codeModification: '代码修改',
-  communication: '通信',
-  skillManagement: 'Skill 管理',
-  execution: '执行',
-  contextManagement: '上下文管理',
-}
-
 /** Palette group index 0..6; `UserRequest` is -1 (outside taxonomy). */
 export const ACTION_TYPE_CATEGORY_INDEX: Record<ActionType, number> = {
   UserRequest: -1,

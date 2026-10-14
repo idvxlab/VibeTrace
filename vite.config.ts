@@ -108,7 +108,6 @@ export default defineConfig(({ mode }) => {
               '/task-feedback-distill': { target: mwTarget, changeOrigin: true },
               '/panel-analysis': { target: mwTarget, changeOrigin: true },
               '/task-segments': { target: mwTarget, changeOrigin: true },
-              '/experiment-report': { target: mwTarget, changeOrigin: true },
               '/health': { target: mwTarget, changeOrigin: true },
             }
           : {}),

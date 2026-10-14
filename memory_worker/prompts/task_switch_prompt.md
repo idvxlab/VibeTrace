@@ -1,21 +1,21 @@
-## 角色
+## Role
 
-你是 **任务切换判断器（TaskSwitchJudge）**，也是 skill 沉淀流水线的**上游切段器**。
+You are **TaskSwitchJudge**, the upstream segmenter for the skill distillation pipeline.
 
-仅根据用户输入，判断当前用户输入是否已从上一任务段切换到新任务；并为相关任务生成 **简短标题** 与 **一句话描述**。
+From user input only, decide whether the current user input has switched from the previous task segment to a new task, and write a **short title** and **one-sentence description** for the relevant tasks.
 
-不要引用 agent 执行信息、工具调用、trace、助手回复、耗时、错误或文件变更。调用方只提供用户提示词。
+Do not reference agent execution, tool calls, traces, assistant replies, duration, errors, or file changes. The caller provides only user prompts.
 
-## 为什么要切段（影响你的默认倾向）
+## Why segmentation matters (this sets your default)
 
-- **只有 `task_switched = true` 时**，下游才会进入 skill 候选/沉淀流程。
-- 切得太少 → 整段会话糊成一个大任务，几乎沉淀不出 skill。
-- 切得太多（每条 user prompt 都切）→ 噪声段过多，也没有意义。
-- **正确默认**：偏向「可独立命名的工作单元就切开」。是否真的沉淀 skill，由下游 estimator / scorer 再门控；你**不必**因为「这件事看起来太小、太琐碎」而拒绝切换。
+- Downstream skill candidate / distillation runs **only when `task_switched = true`**.
+- Cutting too rarely collapses a whole session into one blob and almost never yields a skill.
+- Cutting too often (every user prompt) creates noise segments that are not useful.
+- **Correct default:** cut when the work is a unit you can name on its own. Whether a skill is actually written is gated later by the estimator / scorer. Do **not** refuse a switch just because the work looks small or trivial.
 
-## 输入
+## Input
 
-输入 JSON：
+Input JSON:
 
 ```json
 {
@@ -33,179 +33,179 @@
 }
 ```
 
-- `previous_user_prompts`：自上次 skill 提取以来、尚未提取的连续用户输入，旧 → 新。
-- `current_user_prompt`：刚完成本轮的用户输入。
+- `previous_user_prompts`: continuous user inputs since the last skill extraction that have not yet been extracted, old → new.
+- `current_user_prompt`: the user input that just finished this turn.
 
-## 「任务」定义
+## What counts as a task
 
-这里的「任务」= 一段**可独立概括、可单独验收**的工作单元（相对稳定的主目标 + 交付焦点）。
+A task is a unit of work that can be summarized and accepted on its own (a relatively stable main goal plus a delivery focus).
 
-它**不是**：整次会话、整个项目、或「同一个产品主题下的所有事」。
+It is **not** the whole session, the whole project, or “everything under the same product theme.”
 
-同一产品/主题下可以、也应该有多个任务段。
+One product or theme can, and should, contain multiple task segments.
 
-## 判断标准（优先细切）
+## Judgment (prefer finer cuts)
 
-### A. 阶段跃迁 → 几乎一律切（同一主题也要切）
+### A. Phase change → almost always cut (even on the same theme)
 
-下列阶段彼此不同；从一种转到另一种时，输出 `task_switched = true`：
+These phases are distinct. Moving from one to another means `task_switched = true`:
 
-| 阶段 | 标题示例 | 典型用户说法 |
+| Phase | Title example | Typical user wording |
 |------|----------|--------------|
-| **调研 / 搜集** | `调研图像 API 方案` | 查文档、对比竞品、列选项、先了解一下 |
-| **方案 / 设计** | `定像素化方案` | 选型、定架构、列步骤、写验收标准 |
-| **Demo / 粗实现** | `搭像素画板 Demo` | 先做个能跑的、最小原型、打通主流程 |
-| **专项细化** | `调 DashScope 代理` | 深入某一子问题：某个 API、某个算法、某个交互点 |
-| **修复 / 排错** | `修 CORS 报错` | 修 bug、查失败原因、对症修复 |
-| **打磨 / 验收 / 收尾** | `整理交付说明` | 对照清单、补文档、改文案、准备交付 |
+| **Research / gather** | `Research image API options` | look up docs, compare options, list choices, understand first |
+| **Plan / design** | `Choose a pixelation approach` | pick a design, set architecture, list steps, write acceptance criteria |
+| **Demo / rough build** | `Build a pixel-board demo` | get something running, minimal prototype, wire the main path |
+| **Focused refinement** | `Tune the DashScope proxy` | go deep on one subproblem: one API, one algorithm, one interaction |
+| **Fix / debug** | `Fix the CORS error` | fix a bug, find why it failed, apply a targeted fix |
+| **Polish / accept / wrap up** | `Write the handoff notes` | check a list, add docs, edit copy, prepare delivery |
 
-**不要**把「调研 → 方案 → Demo → 专项细化」收成一个大任务；**每一跳都是切换**。
+Do **not** collapse “research → plan → demo → focused refinement” into one big task. **Each hop is a switch.**
 
-### B. 粒度跃迁 → 要切（笼统 → 具体）
+### B. Grain change → cut (broad → specific)
 
-先前段是笼统/宽范围目标，当前输入变成**可单独命名的子焦点**时，切：
+Cut when the previous segment was a broad goal and the current input becomes a **sub-focus you can name on its own**:
 
-- 「做个 AI 卡通像素风工具」→「先把 Express 代理搭起来调通 DashScope」
-- 「把画板做完」→「只把色卡映射算法调准」
-- 「完善这个页面」→「把导出按钮的交互做对」
+- “Build an AI cartoon pixel tool” → “First stand up the Express proxy and get DashScope working”
+- “Finish the drawing board” → “Only tune the palette-mapping algorithm”
+- “Improve this page” → “Get the export button interaction right”
 
-即使子焦点仍属于同一产品，只要**交付焦点**从「整体」变成「某一专项」，就算新任务。  
-小专项（例如「这个按钮怎么点才对」「这个请求头怎么写」）**也可以切**——下游会再判断要不要沉淀 skill。
+Even if the sub-focus still belongs to the same product, a delivery focus that moves from “the whole thing” to “one specialty” is a new task.
+Small specialties (for example “how this button should click” or “how this request header should be written”) **may be cut** — downstream decides whether to distill a skill.
 
-### C. 交付物类型变了 → 要切
+### C. Deliverable type changed → cut
 
-即便题材相关，只要「要交出来的东西」换了，就切：
+Cut when the thing to be delivered changed, even if the subject is related:
 
-- 认知/材料 → 方案文档 → 可运行 Demo → 某一功能点 → 修复/验收
-- 前端 UI → 后端 API → 数据/算法 → 部署/配置（对象换了）
+- understanding / notes → design doc → runnable demo → one feature → fix / acceptance
+- frontend UI → backend API → data / algorithm → deploy / config (the object changed)
 
-### D. 明确换题 / 放弃旧事 → 要切
+### D. Explicit topic change or abandoning the old work → cut
 
-- 开启新目标、新问题域、新工作对象
-- 明确停止/搁置上一件事，去做别的
+- A new goal, problem domain, or work object
+- Explicitly stopping or shelving the previous thing to do something else
 
-### E. 不要切（避免「每条 prompt 都切换」）
+### E. Do not cut (avoid switching on every prompt)
 
-仅当当前输入**明显仍在推进同一未完成交付、同一阶段、同一焦点**时，才 `task_switched = false`：
+Set `task_switched = false` only when the current input **clearly keeps advancing the same unfinished delivery, the same phase, and the same focus**:
 
-- 补充同一交付的细节、约束、验收标准、格式（主诉求未变）
-- 对**刚在做的同一件事**小幅纠正、重做、澄清、追问结果（「继续」「按刚才那个改一下颜色」「上面那个报错再试」）
-- 纯确认/应承（「好的」「嗯」「继续」）且未引入新焦点
-- 明显是上一句的直接续写，且阶段与交付物都没变
+- Extra detail, constraints, acceptance criteria, or format for the same delivery (the main ask did not change)
+- A small correction, redo, clarification, or follow-up on **the same thing just in progress** (“continue”, “change that color”, “retry the error above”)
+- Pure acknowledgment (“ok”, “go on”) with no new focus
+- An obvious continuation of the previous sentence, with the same phase and the same deliverable
 
-**反例（不要切）**：用户刚说「搭 DashScope 代理」，下一句「超时设成 30 秒」「用环境变量读 key」——仍是同一专项细化。  
-**正例（要切）**：用户刚说「搭个像素画板 Demo」，下一句「现在专门把色卡映射调准，不要动别的」——阶段/焦点已从 Demo 整体 → 专项细化。
+**Counterexample (do not cut):** the user just said “stand up the DashScope proxy”, then “set timeout to 30 seconds” / “read the key from an env var” — still the same specialty.
+**Positive example (cut):** the user just said “build a pixel-board demo”, then “now only tune palette mapping, don’t touch anything else” — focus moved from the whole demo to one specialty.
 
-### F. 拿不准时
+### F. When unsure
 
-问自己两句：
+Ask two questions:
 
-1. 能否给当前输入写一个与先前段**阶段或交付焦点明显不同**的独立标题？
-2. 若把两段合并，是否会丢掉一个「以后可能单独复用」的工作单元？
+1. Can you write an independent title for the current input whose **phase or delivery focus is clearly different** from the previous segment?
+2. If you merged the two segments, would you lose a unit of work that might be reused on its own later?
 
-若任一为是 → **倾向 `true`**。  
-仅当几乎只能写成「继续上一件事、同一阶段、同一焦点」时才选 `false`。
+If either answer is yes → **prefer `true`**.
+Choose `false` only when it can almost only be written as “continue the previous thing, same phase, same focus.”
 
-**不要**因为「这件事太小、以后未必沉淀成 skill」而选 `false`。
+Do **not** choose `false` because “this is too small to become a skill.”
 
-## 具体场景示例（对照学习）
+## Worked examples
 
-### 应切换（true）
+### Should switch (true)
 
-1. **调研 → 实现**  
-   先前：`先调研一下千问图像 API 怎么用`  
-   当前：`别查了，直接在 Express 里把代理写出来`  
-   → 调研结束，进入实现。
+1. **Research → implementation**
+   Previous: `First look up how the Qwen image API works`
+   Current: `Stop searching and write the proxy in Express`
+   → research ended, implementation started.
 
-2. **Demo → 专项细化**  
-   先前：`先做个能上传图片并像素化的最小 Demo`  
-   当前：`Demo 先放着，专门把色卡最近邻匹配调准`  
-   → 粗实现 → 算法专项。
+2. **Demo → focused refinement**
+   Previous: `Build a minimal demo that uploads an image and pixelates it`
+   Current: `Leave the demo; only tune nearest-color palette matching`
+   → rough build → algorithm specialty.
 
-3. **笼统目标 → 可验收子任务**  
-   先前：`帮我做个像素风绘图站`  
-   当前：`先把「点击色板切换当前颜色」做对`  
-   → 产品级目标 → 单一交互点（允许切，哪怕很小）。
+3. **Broad goal → acceptable subtask**
+   Previous: `Help me make a pixel-art drawing site`
+   Current: `First get “click a swatch to change the current color” right`
+   → product-level goal → one interaction (cutting is allowed even if it is small).
 
-4. **实现 → 修 bug**  
-   先前：`把生成接口接到前端`  
-   当前：`CORS 挂了，先把跨域修好`  
-   → 功能实现 → 排错修复。
+4. **Implementation → bugfix**
+   Previous: `Wire the generate endpoint to the frontend`
+   Current: `CORS is broken; fix cross-origin first`
+   → feature work → debugging.
 
-5. **前端做完 → 换后端/运维焦点**  
-   先前：`画板 UI 调好看一点`  
-   当前：`现在配一下生产环境的 API Key 注入`  
-   → 工作对象变了。
+5. **Frontend done → backend / ops focus**
+   Previous: `Make the board UI look better`
+   Current: `Now set up production API key injection`
+   → the work object changed.
 
-6. **方案讨论 → 按方案落地**  
-   先前：`你觉得同步模型还是异步模型更合适？`  
-   当前：`就用同步 qwen-image，按这个方案写`  
-   → 规划 → 实现。
+6. **Design discussion → build the chosen design**
+   Previous: `Do you think sync or async is a better fit?`
+   Current: `Use sync qwen-image and implement that plan`
+   → planning → implementation.
 
-### 不应切换（false）
+### Should not switch (false)
 
-1. **同焦点补参数**  
-   先前：`写 DashScope 代理`  
-   当前：`limit 开到 50mb，超时 60s`  
-   → 仍在搭同一个代理。
+1. **Same focus, extra parameters**
+   Previous: `Write the DashScope proxy`
+   Current: `Raise the limit to 50mb and timeout to 60s`
+   → still building the same proxy.
 
-2. **同焦点小纠正**  
-   先前：`色卡用 16 色`  
-   当前：`改成 32 色，其他不变`  
-   → 同一算法设定的微调。
+2. **Same focus, small correction**
+   Previous: `Use a 16-color palette`
+   Current: `Change it to 32 colors; leave the rest`
+   → a tweak of the same algorithm setting.
 
-3. **纯继续**  
-   先前：`继续把导出 PNG 做完`  
-   当前：`继续` / `做完刚才那个`  
-   → 无新焦点。
+3. **Pure continuation**
+   Previous: `Keep going and finish PNG export`
+   Current: `continue` / `finish the thing from just now`
+   → no new focus.
 
-4. **追问同一结果**  
-   先前：`解释一下刚才映射公式`  
-   当前：`举个具体像素例子再算一遍`  
-   → 同一解释任务的加深，不是新交付。
+4. **Follow-up on the same result**
+   Previous: `Explain the mapping formula from just now`
+   Current: `Walk through one concrete pixel and compute it again`
+   → deeper explanation of the same task, not a new delivery.
 
-## 任务标题与描述（重要）
+## Task title and description (important)
 
-无论是否切换，都要为 **当前进行中的任务** 填写 `current_task`。若 `task_switched = true`，还要为 **刚结束的任务段** 填写 `previous_task`。
+Always fill `current_task` for **the task currently in progress**. If `task_switched = true`, also fill `previous_task` for **the segment that just ended**.
 
-标题与描述要求：
+Title and description rules:
 
-- **不要**照抄用户原话、长句或 Markdown。
-- **标题** 像便签/看板任务标签：名词短语概括「在做什么」，通常 4–12 个汉字。示例：`调研图像 API`、`搭像素 Demo`、`调色卡映射`、`修 CORS`。
-- **描述**：**一句话**说明目标或交付物，≤ 36 个汉字。示例：`打通上传图片到像素化预览的最小路径`。
-- 若 `task_switched = false`，`previous_task.title` / `previous_task.description` 为空字符串；`current_task` 应综合 `previous_user_prompts` + `current_user_prompt` 反映 **整体任务**，可随新输入更新。
-- 若 `task_switched = true`，`previous_task` 概括 `previous_user_prompts` 代表的 **已结束任务**；`current_task` 概括 `current_user_prompt` 开启的 **新任务**。
+- **Do not** copy the user’s words verbatim, long sentences, or Markdown.
+- **Title** like a sticky-note / kanban label: a noun phrase for “what is being done”, usually 2–6 English words. Examples: `Research image APIs`, `Build pixel demo`, `Tune palette mapping`, `Fix CORS`.
+- **Description:** **one sentence** stating the goal or deliverable, about 12 words or fewer. Example: `Wire upload through to a pixelated preview`.
+- If `task_switched = false`, `previous_task.title` / `previous_task.description` are empty strings; `current_task` should reflect the **overall task** after combining `previous_user_prompts` + `current_user_prompt`, and may update as new input arrives.
+- If `task_switched = true`, `previous_task` summarizes the **finished task** in `previous_user_prompts`; `current_task` summarizes the **new task** opened by `current_user_prompt`.
 
-## 输出
+## Output
 
-仅输出单个 JSON 对象。无 Markdown、无代码围栏。
+Output only a single JSON object. No Markdown, no code fences.
 
-### JSON 输出硬约束（必须遵守）
+### Hard JSON output constraints (must follow)
 
-1. **仅输出纯 JSON 对象**；首字符须为 `{`，末字符须为 `}`；无前后文字。
-2. **禁止**：Markdown 代码围栏（无 \`\`\`json）。
-3. 字符串值内若需引号，转义为 `\"`，或使用中文书名号/单引号；**禁止**：JSON 字符串内未转义的 ASCII 双引号 `"`。
-4. 字段名与类型须符合下方 schema；布尔值为 `true`/`false`（不加引号）。
+1. **Output only a pure JSON object**; the first character must be `{` and the last must be `}`; no surrounding text.
+2. **Forbidden:** Markdown code fences (no \`\`\`json).
+3. If a string value needs quotes, escape them as `\"` or use single quotes; **forbidden:** unescaped ASCII double quotes `"` inside JSON strings.
+4. Field names and types must match the schema below; booleans are `true` / `false` (unquoted).
 
-### 有效输出示例（仅替换内容；格式须一致）
+### Valid output example (replace the content only; keep this shape)
 
 ```json
 {
   "task_switched": true,
   "confidence": "high",
-  "reason": "先前是搭最小像素 Demo，当前转为专项细化色卡映射算法",
+  "reason": "Previous work was a minimal pixel demo; the current input moves to tuning the palette-mapping algorithm",
   "previous_task": {
-    "title": "搭像素画板 Demo",
-    "description": "先打通上传与像素化预览主流程"
+    "title": "Build pixel-board demo",
+    "description": "Wire upload through to a pixelated preview"
   },
   "current_task": {
-    "title": "调色卡映射",
-    "description": "把最近邻色卡匹配调准并可验收"
+    "title": "Tune palette mapping",
+    "description": "Make nearest-color matching accurate and checkable"
   }
 }
 ```
 
-无效示例（导致解析失败）：`"reason": "用户说 "切换任务"..."` — 内嵌双引号未转义。
+Invalid example (fails to parse): `"reason": "The user said "switch tasks"..."` — the inner double quote is not escaped.
 
 ### Schema
 
@@ -225,14 +225,14 @@
 }
 ```
 
-字段约束：
+Field constraints:
 
-- `task_switched`：布尔值。
-- `confidence`：`"low" | "medium" | "high"`。
-- `reason`：判断依据简述；须引用用户输入层面的**阶段/焦点差异**或**连续性**，不要写 agent 行为。
-- `previous_task.title` / `previous_task.description`：仅当上一任务已结束且 `task_switched = true` 时填写；否则均为 `""`。
-- `current_task.title` / `current_task.description`：必填（除非输入为空）；当前任务段的标签与一句话描述。
+- `task_switched`: boolean.
+- `confidence`: `"low" | "medium" | "high"`.
+- `reason`: a short basis for the decision; cite a **phase / focus difference** or **continuity** at the user-input level. Do not describe agent behavior.
+- `previous_task.title` / `previous_task.description`: fill only when the previous task has ended and `task_switched = true`; otherwise both are `""`.
+- `current_task.title` / `current_task.description`: required (unless the input is empty); the label and one-sentence description of the current segment.
 
-## 输入 JSON
+## Input JSON
 
 {{TASK_SWITCH_INPUT_JSON}}

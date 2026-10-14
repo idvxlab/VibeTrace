@@ -44,7 +44,6 @@ import {
   mergeMessagesForActionTooltipLookup,
 } from '../utils/actionTooltipMapping'
 import { stripHarnessGuidanceForDisplay } from '../config/harnessGuidance'
-import { experimentTelemetry } from '../experiment/telemetry'
 
 /** Skill row in the session-scoped Skill Panel (may come from any task tab). */
 type SessionSkillRecord = TaskSkillRecord & { taskId: string }
@@ -206,8 +205,6 @@ interface SubtaskDebugPanelProps {
   errorDiagnosisBySubtaskId?: Record<string, MemoryWorkerErrorDiagnosis>
   /** Fired when a panel trajectory seals — triggers independent Trace summary / error diagnosis. */
   onPanelSealed?: (subtaskId: string) => void
-  /** First time a subtask card scrolls into view (≥35% visible). */
-  onPanelBecameVisible?: (subtaskId: string) => void
   /** Live OpenCode permission ask for this session (SSE / hydrate). */
   pendingPermission?: OcPendingPermissionRequest | null
   /** Permission asks kept on the trajectory after Allow/Reject. */
@@ -235,7 +232,6 @@ export default function SubtaskDebugPanel({
   sessionId,
   errorDiagnosisBySubtaskId = {},
   onPanelSealed,
-  onPanelBecameVisible,
   pendingPermission = null,
   permissionTraces = [],
   recentCompaction = null,
@@ -243,8 +239,6 @@ export default function SubtaskDebugPanel({
   const summaryTooltipSafeId = useId().replace(/:/g, '')
   const summaryTooltipId = `subtask-summary-tip-${summaryTooltipSafeId}`
   const [tooltipMounted, setTooltipMounted] = useState(false)
-  const pendingSummaryTipRef = useRef(false)
-  const pendingSummarySubtaskIdRef = useRef<string | null>(null)
   const [colorBy, setColorBy] = useState<'tokens' | 'type'>('type')
   const [legendExpanded, setLegendExpanded] = useState(true)
   const [skillsByTaskId, setSkillsByTaskId] = useState<Record<string, TaskSkillRecord[]>>({})
@@ -318,27 +312,6 @@ export default function SubtaskDebugPanel({
   useEffect(() => {
     setStickTrajectoryToBottom(true)
   }, [sessionId])
-
-  useEffect(() => {
-    if (!onPanelBecameVisible) return
-    const root = flowLayoutMode === 'summary' ? summaryViewportRef.current : listScrollRef?.current
-    if (!root) return
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting || entry.intersectionRatio < 0.35) continue
-          const id = (entry.target as HTMLElement).dataset.subtaskPanelId
-          if (id) onPanelBecameVisible(id)
-        }
-      },
-      { root: flowLayoutMode === 'summary' ? null : root, threshold: [0, 0.35, 0.5] },
-    )
-
-    const nodes = root.querySelectorAll('[data-subtask-panel-id]')
-    nodes.forEach((node) => observer.observe(node))
-    return () => observer.disconnect()
-  }, [visibleSubtasks, flowLayoutMode, onPanelBecameVisible, listScrollRef])
 
   /** New panels while pinned to bottom: keep the newest card in view. */
   const prevVisibleCountRef = useRef(visibleSubtasks.length)
@@ -979,11 +952,6 @@ export default function SubtaskDebugPanel({
                             data-tooltip-html={tipHtml}
                             data-tooltip-place="top"
                             data-vt-tip="action"
-                            onMouseEnter={() => {
-                              pendingSummaryTipRef.current = true
-                              pendingSummarySubtaskIdRef.current = row.subtaskId
-                              experimentTelemetry.onPanelView(row.subtaskId, sessionId, 'tooltip.summary')
-                            }}
                             style={{
                               width: summaryLayout.blockWidth,
                               height: summaryLayout.blockHeight,
@@ -1016,19 +984,6 @@ export default function SubtaskDebugPanel({
           clickable
           globalCloseEvents={{ scroll: false, resize: true, escape: true }}
           arrowColor="#f8fafc"
-          afterShow={() => {
-            experimentTelemetry.enterPanelFocus('tooltip')
-            if (pendingSummaryTipRef.current) {
-              experimentTelemetry.onActionTooltipShow(
-                sessionId,
-                'summary',
-                pendingSummarySubtaskIdRef.current || undefined,
-              )
-            }
-          }}
-          afterHide={() => {
-            experimentTelemetry.leavePanelFocus('tooltip', 'trajectory')
-          }}
         />
       )}
     </>
@@ -1094,10 +1049,6 @@ export default function SubtaskDebugPanel({
         setSkillsByTaskId((prev) => ({ ...prev, [taskId]: result.skills ?? (result.skill ? [result.skill] : []) }))
         setSkillStatusByTaskId((prev) => ({ ...prev, [taskId]: result.status || 'ready' }))
         setSkillDiscoveredCountByTaskId((prev) => ({ ...prev, [taskId]: result.discoveredCount ?? prev[taskId] ?? 0 }))
-        experimentTelemetry.onSkillDistill(
-          sessionId,
-          result.skill?.skillName || result.skills?.[0]?.skillName,
-        )
       })
       .catch((err: unknown) => {
         setSkillStatusByTaskId((prev) => ({ ...prev, [taskId]: 'error' }))
@@ -1121,7 +1072,6 @@ export default function SubtaskDebugPanel({
   const openSkillDetail = (skill: SessionSkillRecord) => {
     if (!sessionId || !skill.taskId) return
     const skillKey = skill.skillPath || skill.skillName || skill.feedbackRunDir || ''
-    experimentTelemetry.onSkillPanelClick(sessionId, skillKey || undefined)
     setSelectedSkillRecord(skill)
     setSelectedSkillDetail(null)
     setSkillDetailError('')
@@ -1281,15 +1231,6 @@ export default function SubtaskDebugPanel({
           <div
             role="tablist"
             aria-label="Task segments"
-            onPointerEnter={() => experimentTelemetry.enterPanelFocus('task')}
-            onPointerLeave={(e) => {
-              const related = e.relatedTarget as Node | null
-              const column = (e.currentTarget as HTMLElement).closest(
-                '[data-exp-focus="trajectory-column"]',
-              )
-              const stay = Boolean(column && related && column.contains(related))
-              experimentTelemetry.leavePanelFocus('task', stay ? 'trajectory' : undefined)
-            }}
             style={{
               display: 'flex',
               flexWrap: 'nowrap',
@@ -1389,7 +1330,6 @@ export default function SubtaskDebugPanel({
           className="hide-scrollbar"
           onScroll={() => {
             updateStickTrajectoryFromScroll()
-            experimentTelemetry.onScroll('trajectory', sessionId)
           }}
           onWheel={handleTrajectoryListWheel}
           style={{
@@ -1546,15 +1486,6 @@ export default function SubtaskDebugPanel({
       </div>
       {canShowSkillDock ? (
         <div
-          onPointerEnter={() => experimentTelemetry.enterPanelFocus('skill')}
-          onPointerLeave={(e) => {
-            const related = e.relatedTarget as Node | null
-            const column = (e.currentTarget as HTMLElement).closest(
-              '[data-exp-focus="trajectory-column"]',
-            )
-            const stay = Boolean(column && related && column.contains(related))
-            experimentTelemetry.leavePanelFocus('skill', stay ? 'trajectory' : undefined)
-          }}
           style={{
             flexShrink: 0,
             marginTop: 8,
@@ -1596,20 +1527,20 @@ export default function SubtaskDebugPanel({
               }}
             >
               {sessionSkillLoading
-                ? '加载中'
+                ? 'Loading'
                 : sessionSkillStatus === 'ready'
-                ? '已就绪'
+                ? 'Ready'
                 : sessionSkillStatus === 'distilling'
-                ? '正在沉淀…'
+                ? 'Distilling…'
                 : sessionSkillStatus === 'error'
-                ? '沉淀失败'
-                : '暂无'}
+                ? 'Distill failed'
+                : 'None'}
             </span>
           </div>
 
           {sessionSkillStatus === 'distilling' || sessionSkillLoading ? (
             <div style={{ fontSize: 10, color: '#92400E', lineHeight: 1.4 }}>
-              正在根据上一任务的 trace 沉淀 skill，完成后会自动出现在下方，无需手动刷新。
+              Distilling a skill from the previous task trace. It will show up below when it is ready.
             </div>
           ) : null}
 
@@ -2079,8 +2010,6 @@ export default function SubtaskDebugPanel({
           aria-modal="true"
           aria-label="Skill detail"
           onClick={closeSkillDetail}
-          onPointerEnter={() => experimentTelemetry.enterPanelFocus('skill')}
-          onPointerLeave={() => experimentTelemetry.leavePanelFocus('skill', 'trajectory')}
           style={{
             position: 'fixed',
             inset: 0,

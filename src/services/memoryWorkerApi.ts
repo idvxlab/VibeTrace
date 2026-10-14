@@ -411,35 +411,6 @@ export async function distillTaskFeedback(req: FeedbackDistillRequest): Promise<
   return parseMemoryWorkerJson<TaskSkillsResult & { runDir?: string; skill?: TaskSkillRecord }>(text, '/task-feedback-distill')
 }
 
-export interface SaveExperimentReportRequest {
-  directory: string
-  report: unknown
-  filename?: string
-}
-
-export interface SaveExperimentReportResult {
-  ok: boolean
-  path?: string
-  filename?: string
-  error?: string
-}
-
-/** Persist an experiment report JSON into `{workspace}/vibetrace-behavior/`. */
-export async function saveExperimentReport(
-  req: SaveExperimentReportRequest,
-): Promise<SaveExperimentReportResult> {
-  const res = await fetch(`${BASE}/experiment-report`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(req),
-  })
-  const text = await res.text()
-  if (!res.ok) {
-    throw new Error(`memory-worker /experiment-report failed: ${res.status} ${text}`)
-  }
-  return parseMemoryWorkerJson<SaveExperimentReportResult>(text, '/experiment-report')
-}
-
 /** @deprecated Prefer `ingestTraceReference`; full trace payloads are kept for compatibility. */
 export async function ingestTraceToMemoryWorker(
   trace: IngestTracePayload,

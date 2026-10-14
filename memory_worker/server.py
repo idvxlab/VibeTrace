@@ -94,9 +94,9 @@ MW_ANALYZER_MODE = (os.environ.get("MW_ANALYZER_MODE") or "opencode").strip().lo
 # memory_worker always performs disk writes (avoids external_directory permission asks).
 MW_WRITER_MODE = (os.environ.get("MW_WRITER_MODE") or "opencode").strip().lower()
 MW_TASK_SWITCH_MODE = (os.environ.get("MW_TASK_SWITCH_MODE") or "opencode").strip().lower()
-# skill_evolve = vibetrace-skill online distill; legacy = analyzer+writer
-# chinese branch default: legacy (analyzer+writer). Set MW_SKILL_PIPELINE=skill_evolve to opt in.
-MW_SKILL_PIPELINE = (os.environ.get("MW_SKILL_PIPELINE") or "legacy").strip().lower()
+# skill_evolve = evidence → estimator → distiller → scorer → write.
+# legacy = analyzer+writer. Default is skill_evolve; set MW_SKILL_PIPELINE=legacy to opt out.
+MW_SKILL_PIPELINE = (os.environ.get("MW_SKILL_PIPELINE") or "skill_evolve").strip().lower()
 MW_SESSION_STRATEGY = (os.environ.get("MW_SESSION_STRATEGY") or "new").strip().lower()
 MW_SESSION_TITLE_PREFIX = (os.environ.get("MW_SESSION_TITLE_PREFIX") or "[mw-internal]").strip()
 MW_CORS_ORIGINS = [x.strip() for x in (os.environ.get("MW_CORS_ORIGINS") or "http://localhost:5173;http://127.0.0.1:5173").split(";") if x.strip()]
@@ -158,13 +158,13 @@ def ensure_prompt_files() -> None:
     if not analyzer.exists():
         analyzer.write_text(
             (
-                "你是 Skill 分析器（Judge）。根据 trace 与 pool_summary，仅输出单个 JSON 对象，不要解释性文字。\n\n"
-                "要求：\n"
-                "1) operation 只能是 CREATE / UPDATE / NONE\n"
-                "2) NONE：skill_name='' 且 source_skill_absolute_path=''\n"
-                "3) UPDATE：source_skill_absolute_path 须非空且来自 pool_summary\n"
-                "4) guide 须含 folders、file_guidance、skill_md、trace_anchors\n\n"
-                "输出 schema：SkillJudgeEnvelope v2.0。\n\n"
+                "You are SkillAnalyzer (Judge). From trace and pool_summary, output a single JSON object only; no explanatory prose.\n\n"
+                "Requirements:\n"
+                "1) operation must be CREATE / UPDATE / NONE only\n"
+                "2) NONE: skill_name='' and source_skill_absolute_path=''\n"
+                "3) UPDATE: source_skill_absolute_path must be non-empty and from pool_summary\n"
+                "4) guide must include folders, file_guidance, skill_md, trace_anchors\n\n"
+                "Output schema: SkillJudgeEnvelope v2.0.\n\n"
                 "trace:\n{{TRACE_JSON}}\n\n"
                 "pool_summary:\n{{POOL_SUMMARY_JSON}}\n"
             ),
@@ -174,12 +174,12 @@ def ensure_prompt_files() -> None:
     if not switcher.exists():
         switcher.write_text(
             (
-                "你是 TaskSwitchJudge。仅根据用户输入，判断任务是否从上一段切换到当前输入。\n\n"
-                "输入 JSON 含 previous_user_prompts（自上次提取以来累积的用户输入，旧→新）"
-                "与 current_user_prompt（本轮用户输入）。不要使用 agent 执行信息。\n\n"
-                "当当前输入开启新目标、交付物或问题域，而非对上一任务的补充、纠正、继续、验证或格式调整时，"
-                "设 task_switched=true。\n\n"
-                "仅输出 JSON 对象：\n"
+                "You are TaskSwitchJudge. From user input alone, decide whether the task switched from the previous segment to the current input.\n\n"
+                "The input JSON contains previous_user_prompts (accumulated user input since last extraction, old→new) "
+                "and current_user_prompt (this turn's user input). Do not use agent execution information.\n\n"
+                "Set task_switched=true when the current input starts a new goal, deliverable, or problem domain, "
+                "rather than a supplement, correction, continuation, verification, or format tweak to the prior task.\n\n"
+                "Output only a JSON object:\n"
                 "{\"task_switched\": boolean, \"confidence\": \"low|medium|high\", "
                 "\"reason\": \"string\", "
                 "\"previous_task\": {\"title\": \"string\", \"description\": \"string\"}, "
@@ -192,19 +192,19 @@ def ensure_prompt_files() -> None:
     if not feedback.exists():
         feedback.write_text(
             (
-                "你是 FeedbackSkillDistiller。你将收到任务段、整体用户反馈，"
-                "以及用户对一个或多个 trace 面板的局部反馈。\n\n"
-                "目标：将反馈蒸馏为可复用 skill 草稿，指导 agent 处理类似任务/trace 模式。\n\n"
-                "当输入中 feedbackContext.traceKind=\"feedback\" 时，这是分析器 trace 的反馈蒸馏变体；"
-                "selectedPanels 仅含用户选中的面板 trace — 不要分析未选中的面板。\n\n"
-                "要求：\n"
-                "1. 仅输出 JSON；无 Markdown、说明或代码围栏。\n"
-                "2. skill_name 使用 kebab-case，简短稳定。\n"
-                "3. description 描述触发场景；不要仅复述任务 id。\n"
-                "4. steps 须为可执行的行为规则。\n"
-                "5. trace_anchors 应引用输入中的 subtaskIndex/actionKey/messageId 等，说明反馈来源。\n"
-                "6. 若信息不足以蒸馏 skill，输出 operation=\"NONE\" 并在 rationale 中说明原因。\n\n"
-                "输出 schema：\n"
+                "You are FeedbackSkillDistiller. You receive a task segment, overall user feedback, "
+                "and localized feedback on one or more trace panels.\n\n"
+                "Goal: distill this feedback into a reusable skill draft to guide the agent on similar task/trace patterns later.\n\n"
+                "When feedbackContext.traceKind=\"feedback\" in the input, this is a feedback-distillation variant of the analyzer trace; "
+                "selectedPanels contains only user-selected panel traces—do not analyze unselected panels.\n\n"
+                "Requirements:\n"
+                "1. Output JSON only; no Markdown, explanations, or code fences.\n"
+                "2. skill_name uses kebab-case; keep it short and stable.\n"
+                "3. description describes trigger scenarios; do not merely restate the task id.\n"
+                "4. steps must be executable behavioral rules.\n"
+                "5. trace_anchors should cite panel subtaskIndex/actionKey/messageId etc. from the input to show where feedback came from.\n"
+                "6. If information is insufficient to distill a skill, output operation=\"NONE\" and explain why in rationale.\n\n"
+                "Output schema:\n"
                 "{\n"
                 "  \"operation\": \"CREATE\" | \"UPDATE\" | \"NONE\",\n"
                 "  \"skill_name\": \"string\",\n"
@@ -230,26 +230,26 @@ def ensure_prompt_files() -> None:
     if not error_diagnosis.exists():
         error_diagnosis.write_text(
             (
-                "你是 VibeTrace 面板分析器。你将收到已完成的子任务 trace，可能成功或含失败动作。\n\n"
-                "目标：为该 trace 面板生成最简解读。无错误时用一句话说明用途、做了什么、最终得到什么。"
-                "有错误时先给同样形式的一句话过程摘要，再写纠错、根因与因果：失败点、根因、为何出错、如何修复。\n\n"
-                "要求：\n"
-                "1. 仅输出 JSON；无 Markdown、说明或代码围栏。\n"
-                "2. summary 须为一句话，尽可能短，形式接近「为 X，执行了 Y，最终得到 Z」。\n"
-                "3. 严格从 input.subtask.actions 与 input.errorActions 归纳；不要编造 trace 中不存在的目标、结果、文件、页面或错误。\n"
-                "4. 描述整体步骤，不要逐动作流水账；保持简洁可读。\n"
-                "5. JSON 字符串内不要使用未转义的 ASCII 双引号；引用用户时用书名号、单引号或省略引号。\n"
-                "6. 若 input.hasError=false，rootCause、causalChain、evidence、fixSuggestion 须为空字符串或空数组；confidence 反映 trace 完整度。\n"
-                "7. 若 input.hasError=true，仅根据输入 trace 证据推理；证据不足时设 confidence=\"low\"。\n"
-                "8. 有错误时区分表面错误与根因（如路径错误、缺少校验、并发子任务失败）。\n"
-                "9. causalChain、evidence、fixSuggestion 可选；仅在有明确证据时填写，否则保持空以避免冗长。\n\n"
-                "输出 schema：\n"
+                "You are VibeTrace Panel Analyzer. You receive a completed subtask trace. It may succeed or contain failed actions.\n\n"
+                "Goal: produce a minimal interpretation for this trace panel. If there is no error, explain in one sentence what it was for, what was done, and what was ultimately obtained. "
+                "If there is an error, give the same one-sentence process summary first, then error correction, cause analysis, and causal reasoning: where it failed, root cause, why the error occurred, and how to fix next.\n\n"
+                "Requirements:\n"
+                "1. Output JSON only; no Markdown, explanations, or code fences.\n"
+                "2. summary must be one sentence, as short as possible, in the form \"To X, performed Y, ultimately obtained Z\".\n"
+                "3. Summarize strictly from input.subtask.actions and input.errorActions; do not invent goals, results, files, pages, or errors not in the trace.\n"
+                "4. Describe overall steps without an action-by-action log; keep it concise and readable.\n"
+                "5. Do not use unescaped ASCII double quotes inside JSON strings; when quoting the user, use single quotes or omit the quote.\n"
+                "6. If input.hasError=false, rootCause, causalChain, evidence, fixSuggestion must be empty string or empty array; confidence reflects trace completeness.\n"
+                "7. If input.hasError=true, reason only from evidence in the input trace; if evidence is insufficient, set confidence=\"low\".\n"
+                "8. When there is an error, distinguish the surface error from the root cause (for example a bad path, missing validation, or a failed concurrent subtask).\n"
+                "9. causalChain, evidence, and fixSuggestion are optional; fill only when the trace has clear evidence, otherwise keep them empty.\n\n"
+                "Output schema:\n"
                 "{\n"
-                "  \"summary\": \"一句话：面板用途、做了什么、产出什么\",\n"
-                "  \"rootCause\": \"无错误时为空；有错误时为根因\",\n"
+                "  \"summary\": \"One sentence: what this panel was for, what it did, and what it produced\",\n"
+                "  \"rootCause\": \"Empty when no error; root cause when there is an error\",\n"
                 "  \"causalChain\": [],\n"
                 "  \"evidence\": [],\n"
-                "  \"fixSuggestion\": \"无错误时为空；有错误时为下一步建议\",\n"
+                "  \"fixSuggestion\": \"Empty when no error; next-step suggestion when there is an error\",\n"
                 "  \"confidence\": \"high\" | \"medium\" | \"low\"\n"
                 "}\n\n"
                 "input:\n{{ERROR_DIAGNOSIS_INPUT_JSON}}\n"
@@ -259,10 +259,10 @@ def ensure_prompt_files() -> None:
     if not writer.exists():
         writer.write_text(
             (
-                "你是 Skill 文案生成器。只输出含 files[].content 的 JSON；禁止使用工具写盘。\n"
-                "- CREATE / UPDATE：生成 SKILL.md 等文件完整内容\n"
-                "- NONE：status=skipped\n"
-                "落盘由 memory_worker 完成。\n"
+                "You are the skill content generator. Output JSON with files[].content only; do not use tools or write to disk.\n"
+                "- CREATE / UPDATE: generate full contents for SKILL.md and other files\n"
+                "- NONE: status=skipped\n"
+                "memory_worker writes the files to disk.\n"
             ),
             encoding="utf-8",
         )
@@ -5052,10 +5052,10 @@ def run_writer(
         }
         writer_llm_prompt = (
             f"{writer_prompt}\n\n"
-            "重要：不要使用任何工具，不要读写磁盘。"
-            "只根据输入生成完整文件内容，输出约定 JSON；"
-            "memory_worker 会负责落盘。\n\n"
-            f"输入：\n{json.dumps(writer_input, ensure_ascii=False, indent=2)}"
+            "Important: do not use any tools and do not read or write the disk. "
+            "Generate full file contents from the input and output the agreed JSON only; "
+            "memory_worker writes the files to disk.\n\n"
+            f"Input:\n{json.dumps(writer_input, ensure_ascii=False, indent=2)}"
         )
         try:
             llm_out = opencode_generate_text(
@@ -5501,62 +5501,6 @@ def _run_legacy_analyzer_writer_pipeline(
     }
 
 
-# Per-workspace folder for always-on behavior reports (hand this folder back to researchers).
-EXPERIMENT_BEHAVIOR_DIRNAME = "vibetrace-behavior"
-
-
-def save_experiment_report(body: dict[str, Any]) -> dict[str, Any]:
-    """Write an experiment report JSON into {workspace}/vibetrace-behavior/.
-
-    Expected body: { directory: str, report: object, filename?: str }
-    """
-    directory = str(body.get("directory") or "").strip()
-    report = body.get("report")
-    if not directory:
-        return {"ok": False, "error": "directory is required"}
-    if report is None:
-        return {"ok": False, "error": "report is required"}
-
-    root = Path(directory).expanduser().resolve()
-    if not root.exists() or not root.is_dir():
-        return {"ok": False, "error": f"directory does not exist or is not a folder: {root}"}
-
-    out_dir = root / EXPERIMENT_BEHAVIOR_DIRNAME
-    try:
-        out_dir.mkdir(parents=True, exist_ok=True)
-    except OSError as e:
-        return {"ok": False, "error": f"failed to create behavior folder: {e}"}
-
-    raw_name = str(body.get("filename") or "").strip()
-    if not raw_name:
-        participant = ""
-        if isinstance(report, dict):
-            participant = str(report.get("participantId") or "").strip()
-        safe_pid = re.sub(r"[^\w.-]+", "_", participant) or "participant"
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        raw_name = f"vibetrace-experiment-{safe_pid}-{stamp}.json"
-    # Prevent path traversal — filename only
-    filename = Path(raw_name).name
-    if not filename.endswith(".json"):
-        filename = f"{filename}.json"
-    if ".." in filename or "/" in filename or "\\" in filename:
-        return {"ok": False, "error": "invalid filename"}
-
-    target = out_dir / filename
-    try:
-        target.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    except OSError as e:
-        return {"ok": False, "error": f"failed to write report: {e}"}
-
-    print(f"[memory-worker] experiment-report saved path={target}")
-    return {
-        "ok": True,
-        "path": str(target),
-        "filename": filename,
-        "folder": EXPERIMENT_BEHAVIOR_DIRNAME,
-    }
-
-
 class AppHandler(BaseHTTPRequestHandler):
     server_version = "memory-worker-py/0.1"
 
@@ -5689,15 +5633,6 @@ class AppHandler(BaseHTTPRequestHandler):
             try:
                 body = self._read_json()
                 result = distill_feedback_skill(body)
-                self._send_json(200 if result.get("ok") else 400, result)
-            except Exception as e:
-                self._send_json(500, {"ok": False, "error": str(e)})
-            return
-
-        if self.path == "/experiment-report":
-            try:
-                body = self._read_json()
-                result = save_experiment_report(body if isinstance(body, dict) else {})
                 self._send_json(200 if result.get("ok") else 400, result)
             except Exception as e:
                 self._send_json(500, {"ok": False, "error": str(e)})

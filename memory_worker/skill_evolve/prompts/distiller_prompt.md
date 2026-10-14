@@ -54,12 +54,12 @@ Distill a fix playbook when evidence shows **any** of:
 | Fix source | What to capture | Example |
 |------------|-----------------|---------|
 | **Agent diagnosed & fixed** | Error symptom → root cause → steps that worked → verify | Trace had failed bash/API call, then successful correction in same segment |
-| **User provided the fix** | User correction in intent/feedback → agent applied it → outcome improved | “加上 CORS 头”“用环境变量读 key”“workdir 要设对” |
-| **Fork pair (tau- → tau+)** | What failed in tau-, what user/continuation changed in tau+ | User said “别改测试，先 revert 源码” |
+| **User provided the fix** | User correction in intent/feedback → agent applied it → outcome improved | “add the CORS header”, “read the key from an env var”, “set the workdir correctly” |
+| **Fork pair (tau- → tau+)** | What failed in tau-, what user/continuation changed in tau+ | User said “don’t change the tests; revert the source first” |
 
 Structure fix skills with symptom-based **`Use when`** cues (how users report the problem), not repo-specific line numbers:
 
-- `## Trigger` — error messages, HTTP codes, tool failures, user phrases (“跨域”“401”“找不到模块”)
+- `## Trigger` — error messages, HTTP codes, tool failures, user phrases (“CORS”, “401”, “module not found”)
 - `## Skip` — neighboring cases where this fix does not apply
 - `## Diagnose` — how to confirm this is the same class of problem (optional but preferred)
 - `## Fix` — verified steps (commands, config, code pattern) that **worked in evidence**
@@ -82,7 +82,7 @@ Return empty only when the evidence is truly one-off (exact file path, private s
 
 - **Capability:** Save an **operational workflow**—steps, templates, checks, collaboration rules, integration patterns—not the raw answer or full source dump.
 - **Boundary:** Scope by **user-intent cues** (what kind of request triggers this), not by repository name or issue id.
-- **Router:** Write `description` in third person as `WHAT it does. Use when PRE-ACTION CUES apply. Skip when NEIGHBORING NEGATIVE CUES apply.` Cues should mirror **how users phrase requests** (e.g. “集成千问 API”, “协商 git 流程”, “像素化 + 色卡”).
+- **Router:** Write `description` in third person as `WHAT it does. Use when PRE-ACTION CUES apply. Skip when NEIGHBORING NEGATIVE CUES apply.` Cues should mirror **how users phrase requests** (e.g. “integrate the Qwen API”, “negotiate a git workflow”, “pixelate + palette”).
 - **Body:** Prefer `## Trigger`, `## Skip`, then either `## Workflow` (greenfield) or `## Diagnose` / `## Fix` / `## Avoid` (error-fix). Include `## Verify` and `## Stop`. Use concise imperatives. Include stable commands, endpoint shapes, env vars, and pitfalls observed in the trace.
 - **Environment:** Do not create a skill whose **only** purpose is dependency install or fresh-clone bootstrap; those may appear as one step inside a larger integration workflow.
 - **Reject:** Return no operation when value depends on a **single-session** artifact (exact diff hunk, private symbol) with **no symptom-based trigger** for future users, or when a pool skill already covers the same intent (then `revise` instead).
@@ -113,7 +113,7 @@ Prefer names such as `dashscope-multimodal-api-proxy`, `git-collaboration-commit
 Return only valid JSON without a Markdown fence or prose:
 
 ```json
-{"candidates":[{"op":"create","name":"fix-express-cors-proxy","description":"Fixes CORS when browser calls a local API proxy. Use when fetch blocked by CORS or user reports 跨域. Skip when API is same-origin only.","content":"## Trigger\nBrowser CORS error; proxy returns data but frontend cannot read.\n\n## Skip\nServer-side-only scripts; already same-origin.\n\n## Diagnose\nConfirm preflight/Access-Control-Allow-Origin missing on proxy response.\n\n## Fix\nAdd cors middleware; allow frontend origin; expose needed headers.\n\n## Avoid\nDisabling browser security; hardcoding * with credentials.\n\n## Verify\nBrowser fetch succeeds; no CORS console error.\n\n## Stop\nEnd-to-end call works from UI."}]}
+{"candidates":[{"op":"create","name":"fix-express-cors-proxy","description":"Fixes CORS when a browser calls a local API proxy. Use when fetch is blocked by CORS or the user reports a cross-origin error. Skip when the API is same-origin only.","content":"## Trigger\nBrowser CORS error; proxy returns data but frontend cannot read.\n\n## Skip\nServer-side-only scripts; already same-origin.\n\n## Diagnose\nConfirm preflight/Access-Control-Allow-Origin missing on proxy response.\n\n## Fix\nAdd cors middleware; allow frontend origin; expose needed headers.\n\n## Avoid\nDisabling browser security; hardcoding * with credentials.\n\n## Verify\nBrowser fetch succeeds; no CORS console error.\n\n## Stop\nEnd-to-end call works from UI."}]}
 ```
 
 Use `{"candidates":[]}` only when no operation qualifies per the rules above. Escape newlines and quotes inside JSON strings.

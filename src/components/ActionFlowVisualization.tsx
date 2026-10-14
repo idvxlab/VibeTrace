@@ -14,7 +14,6 @@ import { effectiveStatusColors, resolveActionBlockColors, statusColors } from '.
 import { appendActionFlowIcon, getActionFlowIconSvg } from './actionFlowIcons'
 import ActionFlowContextMenu, { type ActionFlowContextMenuState } from './ActionFlowContextMenu'
 import { actionKey } from '../utils/actionKey'
-import { experimentTelemetry } from '../experiment/telemetry'
 import {
   claimActionFlowPinnedTip,
   subscribeActionFlowPinnedTip,
@@ -1353,8 +1352,6 @@ interface Props {
   forkAnchorActionKey?: string | null
   /** Palette id when `colorMode === 'type'` */
   actionTypePaletteId?: ActionTypePaletteId
-  /** Experiment: attribute tooltip views to this subtask panel. */
-  telemetrySubtaskId?: string
   /** Fired when a flow tip opens/closes — parent can slow live redraw while the user is reading. */
   onTooltipOpenChange?: (open: boolean) => void
 }
@@ -1384,7 +1381,6 @@ export default function ActionFlowVisualization({
   onSelectAction,
   forkAnchorActionKey = null,
   actionTypePaletteId = DEFAULT_ACTION_TYPE_PALETTE_ID,
-  telemetrySubtaskId,
   onTooltipOpenChange,
 }: Props) {
   const svgRef = useRef<SVGSVGElement | null>(null)
@@ -1399,8 +1395,6 @@ export default function ActionFlowVisualization({
   const reactId = useId().replace(/:/g, '')
   const markerId = `action-flow-arrow-${reactId}`
   const [scrollClientWidth, setScrollClientWidth] = useState(0)
-  const telemetrySubtaskIdRef = useRef(telemetrySubtaskId)
-  telemetrySubtaskIdRef.current = telemetrySubtaskId
   const onTooltipOpenChangeRef = useRef(onTooltipOpenChange)
   onTooltipOpenChangeRef.current = onTooltipOpenChange
   const onSelectActionRef = useRef(onSelectAction)
@@ -1980,14 +1974,7 @@ export default function ActionFlowVisualization({
             .attr('data-vt-end-region', endRegion)
           circle.on('click', (ev: MouseEvent) => {
             ev.stopPropagation()
-            const prev = pinnedTipRef.current
-            const closing = prev?.kind === 'flow-end' && prev.endRegion === endRegion
             openPinnedTipRef.current({ kind: 'flow-end', endRegion, html: endTip })
-            if (!closing) {
-              const sid = telemetrySubtaskIdRef.current
-              if (sid) experimentTelemetry.onPanelView(sid, undefined, 'tooltip.flow_end')
-              experimentTelemetry.onFlowEndSummaryTooltipShow(undefined, sid)
-            }
           })
         }
         return
@@ -2062,14 +2049,7 @@ export default function ActionFlowVisualization({
         .attr('data-vt-action-key', ak)
       actionTarget.on('click', (ev: MouseEvent) => {
         ev.stopPropagation()
-        const prev = pinnedTipRef.current
-        const closing = prev?.kind === 'action' && prev.actionKey === ak
         openPinnedTipRef.current({ kind: 'action', actionKey: ak, html: tipHtml })
-        if (!closing) {
-          const sid = telemetrySubtaskIdRef.current
-          if (sid) experimentTelemetry.onPanelView(sid, undefined, 'tooltip.timeline')
-          experimentTelemetry.onActionTooltipShow(undefined, 'timeline', sid)
-        }
         onSelectActionRef.current?.(ak)
       })
       /** Persist filter dim flags so reused DOM nodes do not flicker stale opacity */

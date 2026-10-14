@@ -1,7 +1,6 @@
-import { SES_1100D36B_CASE_STUDY } from './overrides/ses_1100d36baffe9pELzCzwrzi89w'
 import type { SessionDemoOverride } from './types'
 
-const OVERRIDES: SessionDemoOverride[] = [SES_1100D36B_CASE_STUDY]
+const OVERRIDES: SessionDemoOverride[] = []
 
 const BY_SESSION = new Map(OVERRIDES.map((o) => [o.sessionId, o]))
 

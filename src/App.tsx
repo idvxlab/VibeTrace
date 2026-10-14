@@ -50,7 +50,6 @@ import FullscreenSubtaskPanel from './components/FullscreenSubtaskPanel'
 import ActionAnalysisModal from './components/ActionAnalysisModal'
 import ForkSessionModal from './components/ForkSessionModal'
 import SubtaskMessageConnector from './components/SubtaskMessageConnector'
-import { experimentTelemetry } from './experiment/telemetry'
 import { groupAssistantSubtasks, isTodoWriteMessage } from './utils/subtaskGrouping'
 import {
   findSubtaskIndexForTodo,
@@ -471,10 +470,6 @@ function App() {
   const selectedDirectoryRef = useRef(selectedDirectory)
   selectedDirectoryRef.current = selectedDirectory
 
-  /** Keep experiment event routing aligned with the workspace the user is viewing. */
-  useEffect(() => {
-    experimentTelemetry.setCurrentDirectory(selectedDirectory)
-  }, [selectedDirectory])
   const initialSessionsLoadedRef = useRef(false)
 
   const refreshSessions = useCallback(
@@ -977,7 +972,6 @@ function App() {
   }, [])
 
   const handleSelectTaskSegment = useCallback((sessionId: string, taskSegmentId: string) => {
-    experimentTelemetry.onTaskTabSelect(taskSegmentId, sessionId)
     setTaskSegmentManuallySelectedBySessionId((prev) => ({ ...prev, [sessionId]: true }))
     setActiveTaskSegmentBySessionId((prev) => ({ ...prev, [sessionId]: taskSegmentId }))
   }, [])
@@ -1843,19 +1837,6 @@ function App() {
     return sortTaskSegmentTabsByMessages(tabs, messages)
   }, [messages, selectedSessionId, taskSegmentsBySessionId])
 
-  useEffect(() => {
-    if (!experimentTelemetry.isActive()) return
-    const ids = assistantSubtasks.map((st) => st.subtask_id).filter(Boolean)
-    experimentTelemetry.onSubtasksObserved(ids, selectedSessionId || undefined)
-  }, [assistantSubtasks, selectedSessionId])
-
-  useEffect(() => {
-    if (!experimentTelemetry.isActive()) return
-    for (const tab of taskSegmentsForActiveSession) {
-      experimentTelemetry.onTaskTabSeen(tab.id, selectedSessionId || undefined)
-    }
-  }, [taskSegmentsForActiveSession, selectedSessionId])
-
   const activeTaskSegmentId = selectedSessionId ? activeTaskSegmentBySessionId[selectedSessionId] : undefined
   const activeTaskSegment = useMemo(() => {
     if (!activeTaskSegmentId) return null
@@ -1953,17 +1934,6 @@ function App() {
   const toggleSubtaskLink = useCallback((si: number) => {
     setLinkedSubtaskIndex((prev) => {
       const next = prev === si ? null : si
-      if (next !== null) {
-        const st = assistantSubtasks[next]
-        if (st?.subtask_id) {
-          experimentTelemetry.onTrajectoryClick(selectedSessionId || undefined, {
-            subtaskId: st.subtask_id,
-            source: 'card',
-          })
-        } else {
-          experimentTelemetry.onTrajectoryClick(selectedSessionId || undefined, { sourceIndex: next })
-        }
-      }
       setSelection((sel) => {
         if (!sel) return null
         if (next === null || sel.subtaskIndex !== next) return null
@@ -1971,25 +1941,7 @@ function App() {
       })
       return next
     })
-  }, [assistantSubtasks, selectedSessionId])
-
-  const handleTodoPanelClick = useCallback(
-    (detail: {
-      target: 'header' | 'section' | 'todo'
-      section?: 'open' | 'done' | 'history'
-      todoId?: string
-    }) => {
-      experimentTelemetry.onTodoPanelClick(selectedSessionId || undefined, detail)
-    },
-    [selectedSessionId],
-  )
-
-  const handlePanelBecameVisible = useCallback(
-    (subtaskId: string) => {
-      experimentTelemetry.onPanelView(subtaskId, selectedSessionId || undefined, 'scroll')
-    },
-    [selectedSessionId],
-  )
+  }, [])
 
   const handlePanelSealed = useCallback(
     (subtaskId: string) => {
@@ -2098,15 +2050,6 @@ function App() {
     },
     [mergePanelAnalysisItems, refreshSessions],
   )
-
-  useEffect(() => {
-    if (!experimentTelemetry.isActive()) return
-    if (linkedSubtaskIndex === null) return
-    const st = assistantSubtasks[linkedSubtaskIndex]
-    if (st?.subtask_id) {
-      experimentTelemetry.onPanelView(st.subtask_id, selectedSessionId || undefined, 'select')
-    }
-  }, [linkedSubtaskIndex, assistantSubtasks, selectedSessionId])
 
   const handleTodoClick = useCallback(
     (todo: OcTodo) => {
@@ -2370,8 +2313,6 @@ function App() {
     // Fire-and-forget like fork’s first message: rely on SSE + a follow-up GET /message poll.
     void (async () => {
       try {
-        experimentTelemetry.onConversationTurn(sid)
-        experimentTelemetry.onAgentTurnStart(sid)
         void notifyTaskSwitchPrompt({
           sessionId: sid,
           userPrompt: rawUserPrompt,
@@ -2398,13 +2339,11 @@ function App() {
             model: composerModelRef.trim() || resolveVibeTraceDefaultModelRef(),
           })
           if (abortGenerationRef.current !== gen || selectedSessionIdRef.current !== sid) {
-            // Abort handler already closed the turn; otherwise close as superseded.
-            experimentTelemetry.onAgentTurnEnd(sid, { superseded: true })
+            // Abort handler already closed the turn; otherwise the session changed.
             return
           }
           const msgs = await getMessages(sid, 'after POST /message completes', dir)
           if (abortGenerationRef.current !== gen || selectedSessionIdRef.current !== sid) {
-            experimentTelemetry.onAgentTurnEnd(sid, { superseded: true })
             return
           }
           setMessages(msgs)
@@ -2419,13 +2358,11 @@ function App() {
           }
         } finally {
           if (abortGenerationRef.current === gen) {
-            experimentTelemetry.onAgentTurnEnd(sid)
             setWaitingForAssistantReply(false)
           }
         }
       } catch (e) {
         window.alert(`Send failed: ${e instanceof Error ? e.message : String(e)}`)
-        experimentTelemetry.onAgentTurnEnd(sid, { error: true })
         setWaitingForAssistantReply(false)
       }
     })()
@@ -2436,7 +2373,6 @@ function App() {
     const sid = selectedSessionId
     const dir = sessions.find(s => s.id === sid)?.directory
     abortGenerationRef.current += 1
-    experimentTelemetry.onAgentTurnEnd(sid, { aborted: true })
     setWaitingForAssistantReply(false)
     // Clear local permission/question prompts — abort cancels the turn that asked for them.
     setPendingPermissionQueues((prev) => {
@@ -2504,7 +2440,6 @@ function App() {
     try {
       const dir = selectedDirectory || undefined
       const created = await createSession(dir)
-      experimentTelemetry.onManualSessionCreate(created.id)
       const list = await refreshSessions([created.directory])
       setSessions(list)
       setApiConnected(true)
@@ -2669,7 +2604,6 @@ function App() {
           messageID: action.messageID,
           directory: dir,
         })
-        experimentTelemetry.onForkComplete(targetSessionId, forked.id)
         if (bundle) {
           saveForkPanelSnapshotBundle(forked.id, bundle)
         }
@@ -2785,8 +2719,6 @@ function App() {
                   }, 1800)
                 })
                 .catch((err) => console.warn('[VibeTrace][fork task-switch prompt failed]', err))
-              experimentTelemetry.onConversationTurn(forked.id)
-              experimentTelemetry.onAgentTurnStart(forked.id)
               await sendMessage(forked.id, guidedUserText, forked.directory, {
                 model: composerModelRef.trim() || resolveVibeTraceDefaultModelRef(),
               })
@@ -2811,12 +2743,9 @@ function App() {
                   )
                 } finally {
                   if (abortGenerationRef.current === gen) {
-                    experimentTelemetry.onAgentTurnEnd(forked.id)
                     setWaitingForAssistantReply(false)
                   }
                 }
-              } else {
-                experimentTelemetry.onAgentTurnEnd(forked.id)
               }
             } catch (err) {
               window.alert(
@@ -2887,7 +2816,6 @@ function App() {
         }}
       >
         <div
-          data-exp-focus="chat-column"
           style={{
             flex: '1 1 auto',
             minWidth: MESSAGE_PANEL_MIN_WIDTH,
@@ -2895,8 +2823,6 @@ function App() {
             display: 'flex',
             flexDirection: 'column',
           }}
-          onPointerEnter={() => experimentTelemetry.enterPanelFocus('chat')}
-          onPointerLeave={() => experimentTelemetry.leavePanelFocus('chat')}
         >
           <div
             style={{
@@ -2926,7 +2852,6 @@ function App() {
               highlightTodoIds={linkedTodoIds}
               todoPanelRevealGeneration={todoPanelRevealGeneration}
               onTodoClick={handleTodoClick}
-              onTodoPanelClick={handleTodoPanelClick}
               onSessionTitleCommit={handleSessionTitleCommit}
               pendingQuestion={
                 selectedSessionId ? pendingQuestions[selectedSessionId] ?? null : null
@@ -2985,7 +2910,6 @@ function App() {
         </div>
 
         <div
-          data-exp-focus="trajectory-column"
           style={{
             width: subtaskPanelWidth,
             flex: `0 0 ${subtaskPanelWidth}px`,
@@ -2995,8 +2919,6 @@ function App() {
             flexDirection: 'column',
             transition: isResizingSubtaskPanel ? 'none' : 'width 0.15s ease',
           }}
-          onPointerEnter={() => experimentTelemetry.enterPanelFocus('trajectory')}
-          onPointerLeave={() => experimentTelemetry.leavePanelFocus('trajectory')}
         >
           <div
             style={{
@@ -3035,7 +2957,6 @@ function App() {
                   type="button"
                   onClick={() => {
                     setSubtaskFlowLayoutMode('timeline')
-                    experimentTelemetry.onTrajectoryClick(selectedSessionId || undefined, { layout: 'timeline' })
                   }}
                   style={{
                     display: 'flex',
@@ -3069,7 +2990,6 @@ function App() {
                   type="button"
                   onClick={() => {
                     setSubtaskFlowLayoutMode('summary')
-                    experimentTelemetry.onTrajectoryClick(selectedSessionId || undefined, { layout: 'summary' })
                   }}
                   style={{
                     display: 'flex',
@@ -3166,7 +3086,6 @@ function App() {
               sessionId={selectedSessionId}
               errorDiagnosisBySubtaskId={errorDiagnosisBySubtaskId}
               onPanelSealed={handlePanelSealed}
-              onPanelBecameVisible={handlePanelBecameVisible}
               pendingPermission={
                 headPendingPermission(selectedSessionId)
               }
@@ -3227,7 +3146,6 @@ function App() {
           sessionId={selectedSessionId}
           errorDiagnosisBySubtaskId={errorDiagnosisBySubtaskId}
           onPanelSealed={handlePanelSealed}
-          onPanelBecameVisible={handlePanelBecameVisible}
           pendingPermission={
             headPendingPermission(selectedSessionId)
           }
