@@ -6,8 +6,6 @@ import type {
   OcPendingPermissionItem,
   OcPermissionReply,
 } from '../types/opencode'
-import { applySessionDemoOverlay } from '../caseStudy/applySessionDemoOverlay'
-import { isCaseStudyDemoEnabled } from '../caseStudy'
 import { normalizeSessionDirectory, sameDirectory } from '../utils/sessionFolders'
 import { resolveVibeTraceDefaultModelRef } from '../config/opencodeDefaults'
 
@@ -317,9 +315,7 @@ export async function getTodos(sessionId: string, directory?: string): Promise<O
     signal: fetchSignal(),
   })
   if (!res.ok) throw new Error(`Failed to fetch todos: ${res.status}`)
-  const todos = (await res.json()) as OcTodo[]
-  if (!isCaseStudyDemoEnabled()) return todos
-  return applySessionDemoOverlay(sessionId, [], todos).todos
+  return (await res.json()) as OcTodo[]
 }
 
 export async function getMessages(sessionId: string, _reason?: string, directory?: string): Promise<OcMessage[]> {
@@ -329,9 +325,7 @@ export async function getMessages(sessionId: string, _reason?: string, directory
     signal: fetchSignal(),
   })
   if (!res.ok) throw new Error(`Failed to fetch messages: ${res.status}`)
-  const messages = (await res.json()) as OcMessage[]
-  if (!isCaseStudyDemoEnabled()) return messages
-  return applySessionDemoOverlay(sessionId, messages, []).messages
+  return (await res.json()) as OcMessage[]
 }
 
 /** One row for the composer dropdown (`ref` is always `providerID/modelID`). */

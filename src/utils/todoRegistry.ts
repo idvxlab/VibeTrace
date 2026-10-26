@@ -1,5 +1,4 @@
 import type { OcMessage, OcTodo } from '../types/opencode'
-import { compareTodosForDisplay, sortTodosForDisplay } from '../caseStudy/applySessionDemoOverlay'
 import { isTodoWriteMessage, parseTodowriteTodosFromMessage } from './subtaskGrouping'
 import { normalizeTodoContent } from './subtaskLinkage'
 
@@ -102,20 +101,14 @@ export function buildSessionTodoModel(
   }
 }
 
-/** For UI: current todo list in message panel sort order */
-export function latestActiveForMessagePanel(
-  model: SessionTodoModel,
-  sessionId: string | undefined,
-): CanonicalTodo[] {
-  return sortTodosForDisplay(model.latestActive, sessionId)
+/** For UI: current todo list in API order */
+export function latestActiveForMessagePanel(model: SessionTodoModel): CanonicalTodo[] {
+  return model.latestActive
 }
 
 /** For UI: history shows only completed items that left the current list */
-export function archivedCompletedList(
-  archive: Map<string, CanonicalTodo>,
-  sessionId?: string,
-): CanonicalTodo[] {
-  return [...archive.values()].sort((a, b) => compareTodosForDisplay(a, b, sessionId))
+export function archivedCompletedList(archive: Map<string, CanonicalTodo>): CanonicalTodo[] {
+  return [...archive.values()].sort((a, b) => a.content.localeCompare(b.content, 'en'))
 }
 
 /** For UI: ordered snapshots by message (with ids) */

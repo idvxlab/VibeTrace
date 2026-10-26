@@ -38,10 +38,8 @@ dist-ssr
 # memory-worker 运行时产物（trace 日志、plugin 状态）
 memory_worker/logs/
 .vibetrace-plugin-status.txt
-
-# Local-only overrides (not committed)
-src/caseStudy/overrides/registry.local.ts
-src/caseStudy/overrides/ses_*.ts
+.vibetrace-runtime/
+release/*.tgz
 
 # User-study recordings written into a workspace (do not commit)
 vibetrace-behavior/

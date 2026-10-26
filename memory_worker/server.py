@@ -22,7 +22,7 @@ from urllib.request import Request, urlopen
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKER_ROOT = Path(__file__).resolve().parent
-LOG_ROOT = REPO_ROOT / "memory_worker" / "logs"
+LOG_ROOT = Path(os.environ.get("VIBETRACE_DATA_DIR") or REPO_ROOT / "memory_worker" / "logs")
 PROMPT_ROOT = REPO_ROOT / "memory_worker" / "prompts"
 INGEST_DEDUP_INDEX = LOG_ROOT / "ingest-dedup-index.json"
 TASK_SWITCH_STATE_PATH = LOG_ROOT / "task-switch-state.json"
@@ -64,7 +64,7 @@ def load_env_file(path: Path, *, override: bool = False) -> None:
 
 
 load_env_file(REPO_ROOT / ".env")
-load_env_file(REPO_ROOT / ".env.local", override=True)
+load_env_file(REPO_ROOT / ".env.local", override=os.environ.get("VIBETRACE_PLUGIN_MODE") != "1")
 
 
 def resolve_config_path(raw: str | os.PathLike[str] | None, default: Path) -> Path:
@@ -5786,6 +5786,7 @@ def main() -> None:
     auth_on = bool(opencode_basic_auth_header())
     print(f"[memory-worker] OPENCODE_AUTH={'basic' if auth_on else 'none'}")
     server = ThreadingHTTPServer(("127.0.0.1", cfg.port), AppHandler)
+    print(f"VIBETRACE_WORKER_READY={server.server_address[1]}", flush=True)
     server.serve_forever()
 
 

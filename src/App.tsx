@@ -908,8 +908,25 @@ function App() {
     let cancelled = false
     setComposerModelsLoading(true)
     setComposerModelsError(null)
-    void getComposerModelOptions(activeSessionDirectory)
-      .then(({ options }) => {
+    const loadModelOptions = async () => {
+      const retryDelaysMs = [0, 350, 900, 1800]
+      let lastError: unknown
+      for (const delayMs of retryDelaysMs) {
+        if (cancelled) return
+        if (delayMs > 0) await new Promise((resolve) => window.setTimeout(resolve, delayMs))
+        if (cancelled) return
+        try {
+          return await getComposerModelOptions(activeSessionDirectory)
+        } catch (error) {
+          lastError = error
+        }
+      }
+      throw lastError
+    }
+    void loadModelOptions()
+      .then((result) => {
+        if (!result) return
+        const { options } = result
         if (cancelled) return
         setComposerModelOptions(options)
         // First visit / cleared selection: pick VibeTrace default (not OpenCode user config).
@@ -1793,13 +1810,13 @@ function App() {
   )
 
   const latestActiveForPanel = useMemo(
-    () => latestActiveForMessagePanel(sessionTodoModel, selectedSessionId),
-    [sessionTodoModel, selectedSessionId],
+    () => latestActiveForMessagePanel(sessionTodoModel),
+    [sessionTodoModel],
   )
 
   const archivedForPanel = useMemo(
-    () => archivedCompletedList(sessionTodoModel.completedArchive, selectedSessionId),
-    [sessionTodoModel.completedArchive, selectedSessionId],
+    () => archivedCompletedList(sessionTodoModel.completedArchive),
+    [sessionTodoModel.completedArchive],
   )
 
   const latestTodowriteBatchProgress = useMemo(
