@@ -4,7 +4,8 @@
 
 <p align="center">
   A visual workspace for human–agent collaboration with <a href="https://opencode.ai/">OpenCode</a>.<br />
-  Understand execution, intervene at any action, and turn experience into reusable skills.
+  Understand execution, intervene at any action, and turn experience into reusable skills.<br />
+  <a href="https://arxiv.org/abs/2611.04466">Paper</a>
 </p>
 
 <p align="center">
@@ -111,6 +112,26 @@ Your chat history and VibeTrace data are preserved.
 ## Tech stack
 
 React 19 · TypeScript · Vite · Tailwind CSS 4 · d3 · react-tooltip
+
+## Paper
+
+Our paper introducing VibeTrace is available on arXiv: [arXiv:2611.04466](https://arxiv.org/abs/2611.04466).
+
+> Xiaoke Yan, Jiaying Lei, Danqing Shi, Zichen Wang, and Nan Cao. “From Watching to Steering: Enabling Human-Coding Agent Collaboration through Execution Traces.” arXiv:2611.04466, 2026. [https://arxiv.org/abs/2611.04466](https://arxiv.org/abs/2611.04466)
+
+If you use VibeTrace, please cite:
+
+```bibtex
+@misc{yan2026watchingsteeringenablinghumancoding,
+  title         = {From Watching to Steering: Enabling Human-Coding Agent Collaboration through Execution Traces},
+  author        = {Xiaoke Yan and Jiaying Lei and Danqing Shi and Zichen Wang and Nan Cao},
+  year          = {2026},
+  eprint        = {2611.04466},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.HC},
+  url           = {https://arxiv.org/abs/2611.04466},
+}
+```
 
 ---
 
